@@ -11,7 +11,15 @@ import streamlit as st
 
 from ian_racing_model.config import Settings
 from ian_racing_model.services import get_scored_card_result
-from ian_racing_model.ui import available_courses, default_date, scores_to_dataframe, screener_dataframe
+from ian_racing_model.ui import (
+    available_courses,
+    default_date,
+    picks_tracker_dataframe,
+    picks_tracker_style,
+    picks_tracker_summary,
+    scores_to_dataframe,
+    screener_dataframe,
+)
 
 
 st.set_page_config(page_title="Ian Racing Model", layout="wide")
@@ -111,6 +119,18 @@ race = st.selectbox("Race", race_options)
 if race != "All races":
     df = df[df["race"] == race]
     display_scores = [score for score in display_scores if score.runner.race_name == race]
+
+st.subheader("Selections Tracker")
+picks_df = picks_tracker_dataframe(display_scores)
+if picks_df.empty:
+    st.info("No race selections available to track.")
+else:
+    summary = picks_tracker_summary(picks_df)
+    winner_metric, ew_metric = st.columns(2)
+    winner_metric.metric("Winner pick win rate", summary["winner_win_rate"])
+    ew_metric.metric("Best EW place rate", summary["ew_place_rate"])
+    st.dataframe(picks_tracker_style(picks_df), width="stretch", hide_index=True)
+    st.caption("Green means won or placed, red means lost, and blue means just missed. Unsettled rows wait for verified results.")
 
 st.subheader("Ranked runners")
 st.dataframe(df, width="stretch", hide_index=True)
