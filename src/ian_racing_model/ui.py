@@ -38,7 +38,12 @@ def scores_to_dataframe(scores: list[RunnerScore]) -> pd.DataFrame:
             "total_score": item.total_score,
             "confidence": item.confidence,
             "odds": runner.current_odds,
-            "fair_odds": item.fair_odds_placeholder,
+            "win_probability": _format_probability(item.win_probability),
+            "place_probability": _format_probability(item.place_probability),
+            "fair_win_odds": _format_decimal(item.fair_win_odds),
+            "fair_place_odds": _format_decimal(item.fair_place_odds),
+            "win_value_edge": _format_edge(item.win_value_edge),
+            "place_value_edge": _format_edge(item.place_value_edge),
             "recommendation": item.recommendation,
             "warnings": "; ".join(item.data_quality_warnings),
         }
@@ -53,7 +58,8 @@ def screener_dataframe(scores: list[RunnerScore], limit: int = 8) -> pd.DataFram
     for item in scores:
         runner = item.runner
         odds = _decimal_odds(runner.current_odds)
-        value_edge = _value_edge(item.total_score, odds)
+        value_edge = item.win_value_edge
+        place_edge = item.place_value_edge
         label = _screener_label(item, odds, value_edge)
         warnings = item.red_flags or item.data_quality_warnings
         rows.append(
@@ -66,7 +72,12 @@ def screener_dataframe(scores: list[RunnerScore], limit: int = 8) -> pd.DataFram
                 "score": item.total_score,
                 "confidence": item.confidence,
                 "odds": runner.current_odds or "Unavailable",
+                "fair_win_odds": _format_decimal(item.fair_win_odds),
+                "fair_place_odds": _format_decimal(item.fair_place_odds),
+                "win_probability": _format_probability(item.win_probability),
+                "place_probability": _format_probability(item.place_probability),
                 "value_edge_pct": _format_edge(value_edge),
+                "place_value_edge_pct": _format_edge(place_edge),
                 "recommendation": item.recommendation,
                 "warnings": "; ".join(warnings[:3]),
                 "_priority": RECOMMENDATION_PRIORITY.get(item.recommendation, 0),
@@ -83,6 +94,46 @@ def screener_dataframe(scores: list[RunnerScore], limit: int = 8) -> pd.DataFram
     ).head(limit)
     df.insert(0, "rank", range(1, len(df) + 1))
     return df.drop(columns=["_priority", "_edge_sort"])
+
+
+def value_screener_dataframe(scores: list[RunnerScore], limit: int = 10) -> pd.DataFrame:
+    rows = []
+    for item in scores:
+        runner = item.runner
+        if item.win_value_edge is None and item.place_value_edge is None:
+            continue
+        best_edge = max(item.win_value_edge or -1.0, item.place_value_edge or -1.0)
+        if best_edge <= 0:
+            continue
+        signal = "Best EW value" if (item.place_value_edge or -1) >= (item.win_value_edge or -1) else "Best win value"
+        rows.append(
+            {
+                "signal": signal,
+                "horse": runner.horse,
+                "course": runner.course,
+                "off_time": runner.off_time,
+                "race": runner.race_name,
+                "odds": runner.current_odds or "Unavailable",
+                "fair_win_odds": _format_decimal(item.fair_win_odds),
+                "fair_place_odds": _format_decimal(item.fair_place_odds),
+                "win_probability": _format_probability(item.win_probability),
+                "place_probability": _format_probability(item.place_probability),
+                "win_value_edge": _format_edge(item.win_value_edge),
+                "place_value_edge": _format_edge(item.place_value_edge),
+                "score": item.total_score,
+                "confidence": item.confidence,
+                "warning": "; ".join((item.red_flags or item.data_quality_warnings)[:2]),
+                "_edge_sort": best_edge,
+            }
+        )
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows).sort_values(
+        by=["_edge_sort", "score", "confidence"],
+        ascending=[False, False, False],
+    ).head(limit)
+    df.insert(0, "rank", range(1, len(df) + 1))
+    return df.drop(columns=["_edge_sort"])
 
 
 def picks_tracker_dataframe(scores: list[RunnerScore]) -> pd.DataFrame:
@@ -166,6 +217,33 @@ def picks_tracker_breakdown(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def performance_by_odds_band(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame()
+    settled = df[~df["outcome"].eq("Awaiting result")].copy()
+    if settled.empty:
+        return pd.DataFrame()
+    settled["_decimal_odds"] = settled["odds"].map(_decimal_odds)
+    settled["odds_band"] = settled["_decimal_odds"].map(_odds_band)
+    rows = []
+    for (pick_type, odds_band), band_rows in settled.groupby(["pick_type", "odds_band"]):
+        total = len(band_rows)
+        wins = int(band_rows["outcome"].eq("WIN").sum())
+        places = int(band_rows["outcome"].isin(["WIN", "PLACED"]).sum())
+        rows.append(
+            {
+                "pick_type": pick_type,
+                "odds_band": odds_band,
+                "settled": total,
+                "wins": wins,
+                "places": places,
+                "win_rate": _ratio_text(wins, total),
+                "place_rate": _ratio_text(places, total),
+            }
+        )
+    return pd.DataFrame(rows).sort_values(["pick_type", "odds_band"])
+
+
 def outsider_last_time_dataframe(scores: list[RunnerScore], min_decimal_odds: float = 15.0) -> pd.DataFrame:
     rows = []
     for item in scores:
@@ -183,6 +261,8 @@ def outsider_last_time_dataframe(scores: list[RunnerScore], min_decimal_odds: fl
                 "last_odds": signal["last_odds"],
                 "signal": signal["signal"],
                 "today_odds": runner.current_odds or "Unavailable",
+                "fair_win_odds": _format_decimal(item.fair_win_odds),
+                "win_value_edge": _format_edge(item.win_value_edge),
                 "score": item.total_score,
                 "recommendation": item.recommendation,
             }
@@ -251,6 +331,32 @@ def _format_edge(edge: float | None) -> str:
     return f"{edge * 100:+.1f} pts"
 
 
+def _format_probability(probability: float | None) -> str:
+    if probability is None:
+        return "Unavailable"
+    return f"{probability * 100:.1f}%"
+
+
+def _format_decimal(value: float | None) -> str:
+    if value is None:
+        return "Unavailable"
+    return f"{value:.2f}"
+
+
+def _odds_band(odds: float | None) -> str:
+    if odds is None:
+        return "No odds"
+    if odds < 3:
+        return "Under 3.0"
+    if odds < 6:
+        return "3.0 to 5.99"
+    if odds < 10:
+        return "6.0 to 9.99"
+    if odds < 20:
+        return "10.0 to 19.99"
+    return "20.0+"
+
+
 def _screener_label(item: RunnerScore, odds: float | None, edge: float | None) -> str:
     has_positive_edge = edge is None or edge > 0
     if item.recommendation == "WIN" and has_positive_edge:
@@ -289,7 +395,8 @@ def _best_each_way_pick(
     return sorted(
         pool,
         key=lambda score: (
-            _value_edge(score.total_score, _decimal_odds(score.runner.current_odds)) or -1,
+            score.place_value_edge if score.place_value_edge is not None else -1,
+            score.win_value_edge if score.win_value_edge is not None else -1,
             score.total_score,
             score.confidence,
         ),
@@ -312,6 +419,12 @@ def _pick_row(item: RunnerScore, pick_type: str) -> dict[str, Any]:
         "confidence": item.confidence,
         "odds": runner.current_odds or "Unavailable",
         "recommendation": item.recommendation,
+        "win_probability": _format_probability(item.win_probability),
+        "place_probability": _format_probability(item.place_probability),
+        "fair_win_odds": _format_decimal(item.fair_win_odds),
+        "fair_place_odds": _format_decimal(item.fair_place_odds),
+        "win_value_edge": _format_edge(item.win_value_edge),
+        "place_value_edge": _format_edge(item.place_value_edge),
         "result": str(position) if position is not None else "Awaiting result",
         "outcome": outcome,
         "place_cutoff": place_cutoff,
