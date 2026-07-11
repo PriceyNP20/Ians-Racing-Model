@@ -14,7 +14,8 @@ from ian_racing_model.ui import default_date, scores_to_dataframe
 
 
 st.title("Top Selections")
-result = get_scored_card_result(default_date(), "Ascot", Settings())
+selected_date = st.date_input("Date", value=default_date())
+result = get_scored_card_result(selected_date, None, Settings())
 if result.warning:
     st.warning(result.warning)
 st.caption(f"Data source: {result.provider}")
@@ -22,4 +23,4 @@ scores = result.scores
 df = scores_to_dataframe(scores)
 if not df.empty:
     df = df[df["recommendation"].isin(["WIN", "EACH_WAY", "PLACE"])].head(10)
-st.dataframe(df, use_container_width=True, hide_index=True)
+st.dataframe(df, width="stretch", hide_index=True)
