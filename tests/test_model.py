@@ -186,6 +186,17 @@ def test_picks_tracker_breakdown_explains_matching_headline_rates() -> None:
     assert breakdown.loc["Best EW pick", "places"] == 1
 
 
+def test_picks_tracker_breakdown_handles_string_place_cutoffs() -> None:
+    tracker = pd.DataFrame(
+        [
+            {"pick_type": "Best EW pick", "outcome": "PLACED", "result": "2", "place_cutoff": "3"},
+            {"pick_type": "Best EW pick", "outcome": "LOSE", "result": "7", "place_cutoff": "3"},
+        ]
+    )
+    breakdown = picks_tracker_breakdown(tracker).set_index("pick_type")
+    assert breakdown.loc["Best EW pick", "places"] == 1
+
+
 def test_performance_by_odds_band_groups_settled_picks() -> None:
     tracker = pd.DataFrame(
         [
