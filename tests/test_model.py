@@ -6,7 +6,7 @@ from datetime import date
 import pandas as pd
 
 from ian_racing_model.config import IAN_FORMULA_V3_1_WEIGHTS, SAMPLE_DATA_DIR
-from ian_racing_model.domain import RunnerScore
+from ian_racing_model.domain import Runner, RunnerScore
 from ian_racing_model.model.scoring import IanFormulaV31
 from ian_racing_model.providers.mock import MockRacingDataProvider
 from ian_racing_model.services import _attach_horse_history, _attach_results
@@ -137,6 +137,43 @@ def test_picks_tracker_selects_winner_and_each_way_per_race() -> None:
     tracker = picks_tracker_dataframe(scores)
     assert {"Winner pick", "Best EW pick"} <= set(tracker["pick_type"])
     assert tracker.groupby(["course", "off_time", "race"]).size().max() <= 2
+
+
+def test_picks_tracker_separates_win_and_each_way_logic() -> None:
+    runner_base = {
+        "meeting_date": date(2026, 7, 11),
+        "course": "Ascot",
+        "off_time": "14:05",
+        "race_name": "Split Logic Stakes",
+        "race_class": "Class 4",
+        "race_type": "Flat",
+        "surface": "Turf",
+        "distance": "1m",
+        "going": "Good",
+        "field_size": 10,
+        "age": 4,
+        "sex": "gelding",
+        "draw": 3,
+        "weight": "9-4",
+        "official_rating": 80,
+        "trainer": "Trainer",
+        "jockey": "Jockey",
+        "jockey_claim": None,
+        "recent_form": "123",
+        "is_non_runner": False,
+        "source_payload": {},
+    }
+    winner = Runner(**runner_base, horse="Win Profile", current_odds="3/1")
+    each_way = Runner(**runner_base, horse="EW Profile", current_odds="10/1")
+    scores = [
+        RunnerScore(winner, 70, 0.7, "WIN", "", 0.42, 0.48, 2.38, 2.08, 0.17, -0.02, [], [], []),
+        RunnerScore(each_way, 64, 0.7, "EACH_WAY", "", 0.22, 0.62, 4.55, 1.61, 0.13, 0.44, [], [], []),
+    ]
+    tracker = picks_tracker_dataframe(scores)
+    picks = tracker.set_index("pick_type")
+    assert picks.loc["Winner pick", "horse"] == "Win Profile"
+    assert picks.loc["Best EW pick", "horse"] == "EW Profile"
+    assert "selection_reason" in tracker.columns
 
 
 def test_picks_tracker_summary_counts_settled_results() -> None:
