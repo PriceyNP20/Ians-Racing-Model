@@ -37,6 +37,14 @@ def get_int_setting(name: str, default: int) -> int:
         return default
 
 
+def get_float_setting(name: str, default: float) -> float:
+    value = get_setting(name, str(default))
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SAMPLE_DATA_DIR = PROJECT_ROOT / "sample_data"
 
@@ -63,7 +71,10 @@ THE_RACING_API_CONFIG = {
         "RACING_API_HORSE_RESULTS_ENDPOINT", "/horses/{horse_id}/results"
     ),
     "horse_history_limit": get_int_setting("RACING_API_HORSE_HISTORY_LIMIT", 6),
-    "horse_history_max_runners": get_int_setting("RACING_API_HORSE_HISTORY_MAX_RUNNERS", 80),
+    "horse_history_max_runners": get_int_setting("RACING_API_HORSE_HISTORY_MAX_RUNNERS", 40),
+    "horse_history_delay_seconds": get_float_setting(
+        "RACING_API_HORSE_HISTORY_DELAY_SECONDS", 0.25
+    ),
     "racecards_region_codes": get_setting("RACING_API_REGION_CODES", "gb"),
     "auth": {
         "username_env": "RACING_API_USERNAME",
