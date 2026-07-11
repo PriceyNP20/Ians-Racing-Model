@@ -31,10 +31,59 @@ class TheRacingApiProvider(RacingDataProvider):
         response = self.session.get(url, params=params, auth=(username, password), timeout=30)
         response.raise_for_status()
         raw = response.json()
-        items = raw.get("runners") or raw.get("racecards") or raw.get("data") or []
+        items = _flatten_racecards(raw)
         mapped = [
             runner
             for runner in (map_runner(item, self.config["field_map"]) for item in items)
             if runner is not None
         ]
         return reject_mismatched_runners(mapped, meeting_date, course), raw
+
+
+def _flatten_racecards(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    if raw.get("runners"):
+        return raw["runners"]
+
+    racecards = raw.get("racecards") or raw.get("data") or []
+    flattened: list[dict[str, Any]] = []
+    for race in racecards:
+        if not isinstance(race, dict):
+            continue
+        race_fields = {
+            "date": race.get("date"),
+            "course": race.get("course"),
+            "off_time": race.get("off_time"),
+            "race_name": race.get("race_name"),
+            "race_class": race.get("race_class"),
+            "race_type": race.get("type"),
+            "surface": race.get("surface"),
+            "distance": race.get("distance"),
+            "going": race.get("going"),
+            "field_size": race.get("field_size"),
+        }
+        for runner in race.get("runners") or []:
+            if not isinstance(runner, dict):
+                continue
+            odds = runner.get("odds") or []
+            current_odds = None
+            if odds and isinstance(odds[0], dict):
+                current_odds = odds[0].get("fractional") or odds[0].get("decimal")
+            flattened.append(
+                {
+                    **race_fields,
+                    "horse": runner.get("horse"),
+                    "age": runner.get("age"),
+                    "sex": runner.get("sex"),
+                    "draw": runner.get("draw"),
+                    "weight": runner.get("lbs"),
+                    "official_rating": runner.get("ofr"),
+                    "trainer": runner.get("trainer"),
+                    "jockey": runner.get("jockey"),
+                    "jockey_claim": None,
+                    "recent_form": runner.get("form"),
+                    "current_odds": current_odds,
+                    "non_runner": runner.get("non_runner") or runner.get("is_non_runner"),
+                    "source_runner": runner,
+                }
+            )
+    return flattened
