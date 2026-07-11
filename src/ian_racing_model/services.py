@@ -5,7 +5,7 @@ from dataclasses import replace
 from datetime import date
 from typing import Any
 
-from ian_racing_model.config import Settings
+from ian_racing_model.config import Settings, THE_RACING_API_CONFIG
 from ian_racing_model.domain import Runner, RunnerScore
 from ian_racing_model.model.scoring import IanFormulaV31
 from ian_racing_model.providers.factory import build_provider
@@ -35,6 +35,7 @@ def get_scored_card_result(
         runners, raw = provider.fetch_racecard(meeting_date, course)
         _store_raw(settings, meeting_date, course, raw)
         runners, results_imported = _attach_results(provider, settings, meeting_date, course, runners)
+        runners = _attach_horse_history(provider, settings, meeting_date, course, runners)
         return ScoredCardResult(
             scores=IanFormulaV31().score_runners(runners),
             provider=settings.provider,
@@ -114,6 +115,64 @@ def _attach_results(
             )
         )
     return merged, matched
+
+
+def _attach_horse_history(
+    provider,
+    settings: Settings,
+    meeting_date: date,
+    course: str | None,
+    runners: list[Runner],
+) -> list[Runner]:
+    limit = int(THE_RACING_API_CONFIG.get("horse_history_limit", 6))
+    max_runners = int(THE_RACING_API_CONFIG.get("horse_history_max_runners", 80))
+    merged: list[Runner] = []
+    raw_audit: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+
+    for index, runner in enumerate(runners):
+        if runner.is_non_runner or index >= max_runners:
+            merged.append(runner)
+            continue
+        try:
+            raw_history = provider.fetch_horse_history(runner, limit=limit)
+        except Exception as exc:
+            errors.append({"horse": runner.horse, "error": type(exc).__name__, "message": str(exc)})
+            merged.append(runner)
+            continue
+
+        history_items = _flatten_horse_history(raw_history)
+        if not history_items:
+            merged.append(runner)
+            continue
+
+        raw_audit.append({"horse": runner.horse, "history": raw_history})
+        merged.append(
+            replace(
+                runner,
+                source_payload={
+                    **runner.source_payload,
+                    "horse_history": history_items[:limit],
+                    "horse_history_raw": raw_history,
+                },
+            )
+        )
+
+    if raw_audit:
+        _store_raw(settings, meeting_date, course, {"horse_history": raw_audit})
+    if errors:
+        _store_raw(settings, meeting_date, course, {"source": "horse_history", "errors": errors})
+    return merged
+
+
+def _flatten_horse_history(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    if not isinstance(raw, dict):
+        return []
+    for key in ("results", "data", "runs", "history", "race_results"):
+        value = raw.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+    return []
 
 
 def _flatten_results(raw: dict[str, Any]) -> list[dict[str, Any]]:
