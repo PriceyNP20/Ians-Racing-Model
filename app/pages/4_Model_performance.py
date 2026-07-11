@@ -15,6 +15,7 @@ from ian_racing_model.ui import (
     default_date,
     model_upgrade_notes,
     outsider_last_time_dataframe,
+    performance_by_odds_band,
     picks_tracker_breakdown,
     picks_tracker_dataframe,
     picks_tracker_style,
@@ -50,6 +51,10 @@ else:
     breakdown_df = picks_tracker_breakdown(picks_df)
     if not breakdown_df.empty:
         st.dataframe(breakdown_df, width="stretch", hide_index=True)
+    odds_band_df = performance_by_odds_band(picks_df)
+    if not odds_band_df.empty:
+        st.subheader("Performance by Odds Band")
+        st.dataframe(odds_band_df, width="stretch", hide_index=True)
     st.dataframe(picks_tracker_style(picks_df), width="stretch", hide_index=True)
     st.caption("Green means won or placed, red means lost, and blue means just missed. Unsettled rows wait for verified results.")
 
