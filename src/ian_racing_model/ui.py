@@ -120,6 +120,7 @@ def value_screener_dataframe(scores: list[RunnerScore], limit: int = 10) -> pd.D
                 "place_probability": _format_probability(item.place_probability),
                 "win_value_edge": _format_edge(item.win_value_edge),
                 "place_value_edge": _format_edge(item.place_value_edge),
+                "value_confidence": _value_confidence_label(item, best_edge),
                 "score": item.total_score,
                 "confidence": item.confidence,
                 "warning": "; ".join((item.red_flags or item.data_quality_warnings)[:2]),
@@ -519,6 +520,7 @@ def _history_candidates(payload: dict[str, Any]) -> list[Any]:
         "previous_run",
         "latest_result",
         "history",
+        "horse_history",
         "results",
         "past_results",
         "horse_results",
@@ -555,3 +557,11 @@ def _history_decimal_odds(payload: dict[str, Any]) -> float | None:
 
 def _format_decimal_odds(odds: float) -> str:
     return f"{odds:.1f}"
+
+
+def _value_confidence_label(item: RunnerScore, best_edge: float) -> str:
+    if item.confidence >= 0.62 and best_edge >= 0.08:
+        return "Strong value"
+    if item.confidence >= 0.52 and best_edge > 0:
+        return "Speculative value"
+    return "Weak data"
