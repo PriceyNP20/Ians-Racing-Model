@@ -18,7 +18,9 @@ class TheRacingApiProvider(RacingDataProvider):
         self.config = config or THE_RACING_API_CONFIG
         self.session = requests.Session()
 
-    def fetch_racecard(self, meeting_date: date, course: str | None = None) -> tuple[list[Runner], dict[str, Any]]:
+    def fetch_racecard(
+        self, meeting_date: date, course: str | None = None
+    ) -> tuple[list[Runner], dict[str, Any]]:
         username = get_setting(self.config["auth"]["username_env"])
         password = get_setting(self.config["auth"]["password_env"])
         if not username or not password:
@@ -26,8 +28,12 @@ class TheRacingApiProvider(RacingDataProvider):
                 "The Racing API credentials are missing. Set RACING_API_USERNAME "
                 "and RACING_API_PASSWORD or use RACING_DATA_PROVIDER=mock."
             )
+
         url = self.config["base_url"].rstrip("/") + self.config["racecards_endpoint"]
         params = {"date": meeting_date.isoformat()}
+        region_codes = _csv_values(self.config.get("racecards_region_codes"))
+        if region_codes:
+            params["region_codes"] = region_codes
         response = self.session.get(url, params=params, auth=(username, password), timeout=30)
         response.raise_for_status()
         raw = response.json()
@@ -41,10 +47,9 @@ class TheRacingApiProvider(RacingDataProvider):
 
 
 def _flatten_racecards(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    racecards = raw.get("racecards") or raw.get("data") or []
     if raw.get("runners"):
         return raw["runners"]
-
-    racecards = raw.get("racecards") or raw.get("data") or []
     flattened: list[dict[str, Any]] = []
     for race in racecards:
         if not isinstance(race, dict):
@@ -87,3 +92,11 @@ def _flatten_racecards(raw: dict[str, Any]) -> list[dict[str, Any]]:
                 }
             )
     return flattened
+
+
+def _csv_values(value: Any) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [item.strip() for item in str(value).split(",") if item.strip()]
