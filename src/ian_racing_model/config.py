@@ -29,6 +29,14 @@ def get_setting(name: str, default: str = "") -> str:
     return default
 
 
+def get_int_setting(name: str, default: int) -> int:
+    value = get_setting(name, str(default))
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SAMPLE_DATA_DIR = PROJECT_ROOT / "sample_data"
 
@@ -51,6 +59,11 @@ THE_RACING_API_CONFIG = {
     "base_url": get_setting("RACING_API_BASE_URL", "https://api.theracingapi.com/v1"),
     "racecards_endpoint": get_setting("RACING_API_RACECARDS_ENDPOINT", "/racecards/pro"),
     "results_endpoint": get_setting("RACING_API_RESULTS_ENDPOINT", "/results"),
+    "horse_results_endpoint": get_setting(
+        "RACING_API_HORSE_RESULTS_ENDPOINT", "/horses/{horse_id}/results"
+    ),
+    "horse_history_limit": get_int_setting("RACING_API_HORSE_HISTORY_LIMIT", 6),
+    "horse_history_max_runners": get_int_setting("RACING_API_HORSE_HISTORY_MAX_RUNNERS", 80),
     "racecards_region_codes": get_setting("RACING_API_REGION_CODES", "gb"),
     "auth": {
         "username_env": "RACING_API_USERNAME",
