@@ -7,6 +7,7 @@ from ian_racing_model.config import IAN_FORMULA_V3_1_WEIGHTS, SAMPLE_DATA_DIR
 from ian_racing_model.domain import RunnerScore
 from ian_racing_model.model.scoring import IanFormulaV31
 from ian_racing_model.providers.mock import MockRacingDataProvider
+from ian_racing_model.services import _attach_results
 from ian_racing_model.ui import (
     picks_tracker_dataframe,
     picks_tracker_summary,
@@ -99,3 +100,44 @@ def test_picks_tracker_summary_counts_settled_results() -> None:
     summary = picks_tracker_summary(tracker)
     assert "%" in summary["winner_win_rate"]
     assert "%" in summary["ew_place_rate"]
+
+
+def test_results_are_attached_to_matching_runners() -> None:
+    class ResultsProvider:
+        def fetch_results(self, meeting_date: date) -> dict:
+            return {
+                "results": [
+                    {
+                        "date": meeting_date.isoformat(),
+                        "course": "Ascot",
+                        "off": "14:05",
+                        "race_name": "Ian Racing Model Sample Handicap",
+                        "runners": [
+                            {
+                                "horse": "Measured Move",
+                                "position": "1",
+                            }
+                        ],
+                    }
+                ]
+            }
+
+    provider = MockRacingDataProvider(SAMPLE_DATA_DIR / "mock_racecard.json")
+    runners, _ = provider.fetch_racecard(date(2026, 7, 11), "Ascot")
+    merged, matched = _attach_results(
+        ResultsProvider(),
+        settings=type(
+            "SettingsStub",
+            (),
+            {
+                "provider": "mock",
+                "database_url": "sqlite:///:memory:",
+            },
+        )(),
+        meeting_date=date(2026, 7, 11),
+        course="Ascot",
+        runners=runners,
+    )
+    assert matched
+    measured = next(runner for runner in merged if runner.horse == "Measured Move")
+    assert measured.source_payload["result_position"] == "1"
