@@ -75,6 +75,10 @@ result = get_scored_card_result(selected_date, None, settings)
 if result.warning:
     st.warning(result.warning)
 st.caption(f"Data source: {result.provider}")
+if result.results_imported:
+    st.success("Verified results have been matched to today's picks.")
+else:
+    st.info("Results are not matched yet. The tracker will settle picks when verified results are available.")
 scores = result.scores
 
 course_options = ["All UK courses"] + available_courses(scores)
