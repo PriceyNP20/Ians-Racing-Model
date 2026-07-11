@@ -45,6 +45,24 @@ class TheRacingApiProvider(RacingDataProvider):
         ]
         return reject_mismatched_runners(mapped, meeting_date, course), raw
 
+    def fetch_results(self, meeting_date: date) -> dict[str, Any]:
+        username = get_setting(self.config["auth"]["username_env"])
+        password = get_setting(self.config["auth"]["password_env"])
+        if not username or not password:
+            return {}
+
+        url = self.config["base_url"].rstrip("/") + self.config["results_endpoint"]
+        params: dict[str, Any] = {
+            "start_date": meeting_date.isoformat(),
+            "end_date": meeting_date.isoformat(),
+        }
+        region_codes = _csv_values(self.config.get("racecards_region_codes"))
+        if region_codes:
+            params["region"] = region_codes
+        response = self.session.get(url, params=params, auth=(username, password), timeout=30)
+        response.raise_for_status()
+        return response.json()
+
 
 def _flatten_racecards(raw: dict[str, Any]) -> list[dict[str, Any]]:
     racecards = raw.get("racecards") or raw.get("data") or []
