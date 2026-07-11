@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import replace
 from datetime import date
 from typing import Any
 
 from ian_racing_model.config import Settings
-from ian_racing_model.domain import RunnerScore
+from ian_racing_model.domain import Runner, RunnerScore
 from ian_racing_model.model.scoring import IanFormulaV31
 from ian_racing_model.providers.factory import build_provider
 from ian_racing_model.providers.mock import MockRacingDataProvider
@@ -17,6 +18,7 @@ class ScoredCardResult:
     scores: list[RunnerScore]
     provider: str
     warning: str | None = None
+    results_imported: bool = False
 
 
 def _store_raw(settings: Settings, meeting_date: date, course: str | None, payload: dict[str, Any]) -> None:
@@ -32,9 +34,11 @@ def get_scored_card_result(
     try:
         runners, raw = provider.fetch_racecard(meeting_date, course)
         _store_raw(settings, meeting_date, course, raw)
+        runners, results_imported = _attach_results(provider, settings, meeting_date, course, runners)
         return ScoredCardResult(
             scores=IanFormulaV31().score_runners(runners),
             provider=settings.provider,
+            results_imported=results_imported,
         )
     except Exception as exc:
         error_payload = {
@@ -61,3 +65,120 @@ def get_scored_card_result(
 
 def get_scored_card(meeting_date: date, course: str | None, settings: Settings) -> list[RunnerScore]:
     return get_scored_card_result(meeting_date, course, settings).scores
+
+
+def _attach_results(
+    provider,
+    settings: Settings,
+    meeting_date: date,
+    course: str | None,
+    runners: list[Runner],
+) -> tuple[list[Runner], bool]:
+    try:
+        raw_results = provider.fetch_results(meeting_date)
+    except Exception as exc:
+        _store_raw(
+            settings,
+            meeting_date,
+            course,
+            {
+                "error": type(exc).__name__,
+                "message": str(exc),
+                "source": "results",
+            },
+        )
+        return runners, False
+
+    result_items = _flatten_results(raw_results)
+    if not result_items:
+        return runners, False
+
+    _store_raw(settings, meeting_date, course, {"results": raw_results})
+    lookup = {_result_key(item): item for item in result_items}
+    merged: list[Runner] = []
+    matched = False
+    for runner in runners:
+        result = lookup.get(_runner_key(runner))
+        if result is None:
+            merged.append(runner)
+            continue
+        matched = True
+        merged.append(
+            replace(
+                runner,
+                source_payload={
+                    **runner.source_payload,
+                    "result_position": result.get("position"),
+                    "result_payload": result,
+                },
+            )
+        )
+    return merged, matched
+
+
+def _flatten_results(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for race in raw.get("results") or raw.get("data") or []:
+        if not isinstance(race, dict):
+            continue
+        race_fields = {
+            "date": race.get("date"),
+            "course": race.get("course"),
+            "off_time": race.get("off") or race.get("off_time"),
+            "race_name": race.get("race_name"),
+        }
+        for runner in race.get("runners") or []:
+            if not isinstance(runner, dict):
+                continue
+            rows.append(
+                {
+                    **race_fields,
+                    "horse": runner.get("horse"),
+                    "position": runner.get("position"),
+                    "result_runner": runner,
+                }
+            )
+    return rows
+
+
+def _runner_key(runner: Runner) -> tuple[str, str, str, str]:
+    return (
+        runner.meeting_date.isoformat(),
+        _normalise(runner.course),
+        _normalise_time(runner.off_time),
+        _normalise_horse(runner.horse),
+    )
+
+
+def _result_key(item: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        str(item.get("date") or ""),
+        _normalise(str(item.get("course") or "")),
+        _normalise_time(str(item.get("off_time") or "")),
+        _normalise_horse(str(item.get("horse") or "")),
+    )
+
+
+def _normalise(value: str) -> str:
+    text = " ".join(value.lower().strip().split())
+    return text.replace(" (gb)", "").replace(" (ire)", "")
+
+
+def _normalise_horse(value: str) -> str:
+    text = _normalise(value)
+    for suffix in (" (gb)", " (ire)", " (fr)", " (usa)"):
+        text = text.replace(suffix, "")
+    return text
+
+
+def _normalise_time(value: str) -> str:
+    text = value.strip()
+    if not text:
+        return ""
+    parts = text.split(":")
+    if len(parts) >= 2:
+        try:
+            return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+        except ValueError:
+            return text
+    return text
