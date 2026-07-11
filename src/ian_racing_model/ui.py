@@ -199,9 +199,9 @@ def picks_tracker_breakdown(df: pd.DataFrame) -> pd.DataFrame:
     for pick_type in ("Winner pick", "Best EW pick"):
         pick_rows = settled[settled["pick_type"].eq(pick_type)]
         total = len(pick_rows)
-        positions = pick_rows["result"].map(_parse_position)
-        place_cutoffs = pick_rows["place_cutoff"].fillna(0).astype(int)
-        place_hits = ((positions.notna()) & (positions <= place_cutoffs)).sum()
+        positions = pd.to_numeric(pick_rows["result"].map(_parse_position), errors="coerce")
+        place_cutoffs = pd.to_numeric(pick_rows["place_cutoff"], errors="coerce").fillna(0)
+        place_hits = int(((positions.notna()) & (positions <= place_cutoffs)).sum())
         wins = pick_rows["outcome"].eq("WIN").sum()
         rows.append(
             {
