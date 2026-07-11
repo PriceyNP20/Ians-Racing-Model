@@ -32,6 +32,7 @@ def get_setting(name: str, default: str = "") -> str:
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SAMPLE_DATA_DIR = PROJECT_ROOT / "sample_data"
 
+
 IAN_FORMULA_V3_1_WEIGHTS: dict[str, int] = {
     "handicap_position": 18,
     "target_race_intent": 12,
@@ -45,9 +46,11 @@ IAN_FORMULA_V3_1_WEIGHTS: dict[str, int] = {
     "market_value": 4,
 }
 
+
 THE_RACING_API_CONFIG = {
     "base_url": get_setting("RACING_API_BASE_URL", "https://api.theracingapi.com/v1"),
     "racecards_endpoint": get_setting("RACING_API_RACECARDS_ENDPOINT", "/racecards/pro"),
+    "racecards_region_codes": get_setting("RACING_API_REGION_CODES", "gb"),
     "auth": {
         "username_env": "RACING_API_USERNAME",
         "password_env": "RACING_API_PASSWORD",
