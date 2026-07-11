@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date
-import os
 from typing import Any
 
 import requests
@@ -23,14 +22,19 @@ class TheRacingApiProvider(RacingDataProvider):
         username = get_setting(self.config["auth"]["username_env"])
         password = get_setting(self.config["auth"]["password_env"])
         if not username or not password:
-            raise RuntimeError("The Racing API credentials are missing. Set RACING_API_USERNAME and RACING_API_PASSWORD or use RACING_DATA_PROVIDER=mock.")
+            raise RuntimeError(
+                "The Racing API credentials are missing. Set RACING_API_USERNAME "
+                "and RACING_API_PASSWORD or use RACING_DATA_PROVIDER=mock."
+            )
         url = self.config["base_url"].rstrip("/") + self.config["racecards_endpoint"]
         params = {"date": meeting_date.isoformat()}
-        if course:
-            params["course"] = course
         response = self.session.get(url, params=params, auth=(username, password), timeout=30)
         response.raise_for_status()
         raw = response.json()
         items = raw.get("runners") or raw.get("racecards") or raw.get("data") or []
-        mapped = [runner for runner in (map_runner(item, self.config["field_map"]) for item in items) if runner is not None]
+        mapped = [
+            runner
+            for runner in (map_runner(item, self.config["field_map"]) for item in items)
+            if runner is not None
+        ]
         return reject_mismatched_runners(mapped, meeting_date, course), raw
