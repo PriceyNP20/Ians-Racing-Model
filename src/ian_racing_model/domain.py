@@ -48,6 +48,12 @@ class RunnerScore:
     confidence: float
     recommendation: str
     fair_odds_placeholder: str
+    win_probability: float
+    place_probability: float
+    fair_win_odds: float | None
+    fair_place_odds: float | None
+    win_value_edge: float | None
+    place_value_edge: float | None
     components: list[ComponentScore]
     red_flags: list[str]
     data_quality_warnings: list[str]
