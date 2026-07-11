@@ -137,6 +137,35 @@ def picks_tracker_summary(df: pd.DataFrame) -> dict[str, str]:
     }
 
 
+def picks_tracker_breakdown(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame()
+
+    rows = []
+    settled = df[~df["outcome"].eq("Awaiting result")].copy()
+    settled["pick_type"] = settled["pick_type"].astype(str).str.strip()
+    for pick_type in ("Winner pick", "Best EW pick"):
+        pick_rows = settled[settled["pick_type"].eq(pick_type)]
+        total = len(pick_rows)
+        positions = pick_rows["result"].map(_parse_position)
+        place_cutoffs = pick_rows["place_cutoff"].fillna(0).astype(int)
+        place_hits = ((positions.notna()) & (positions <= place_cutoffs)).sum()
+        wins = pick_rows["outcome"].eq("WIN").sum()
+        rows.append(
+            {
+                "pick_type": pick_type,
+                "settled": total,
+                "wins": int(wins),
+                "places": int(place_hits),
+                "just_missed": int(pick_rows["outcome"].isin(["JUST LOST", "JUST MISSED"]).sum()),
+                "losses": int(pick_rows["outcome"].eq("LOSE").sum()),
+                "win_rate": _ratio_text(int(wins), total),
+                "place_rate": _ratio_text(int(place_hits), total),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def outsider_last_time_dataframe(scores: list[RunnerScore], min_decimal_odds: float = 15.0) -> pd.DataFrame:
     rows = []
     for item in scores:
