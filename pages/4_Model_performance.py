@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
-import runpy
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,4 +10,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 PAGE_PATH = ROOT / "app" / "pages" / "4_Model_performance.py"
-runpy.run_path(str(PAGE_PATH), run_name="__main__")
+spec = importlib.util.spec_from_file_location("ian_racing_model_page_model_performance", PAGE_PATH)
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
