@@ -63,6 +63,24 @@ class TheRacingApiProvider(RacingDataProvider):
         response.raise_for_status()
         return response.json()
 
+    def fetch_horse_history(self, runner: Runner, limit: int = 6) -> dict[str, Any]:
+        username = get_setting(self.config["auth"]["username_env"])
+        password = get_setting(self.config["auth"]["password_env"])
+        horse_id = _horse_id(runner)
+        if not username or not password or not horse_id:
+            return {}
+
+        endpoint = str(self.config["horse_results_endpoint"]).format(horse_id=horse_id)
+        url = self.config["base_url"].rstrip("/") + endpoint
+        response = self.session.get(
+            url,
+            params={"limit": limit},
+            auth=(username, password),
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()
+
 
 def _flatten_racecards(raw: dict[str, Any]) -> list[dict[str, Any]]:
     racecards = raw.get("racecards") or raw.get("data") or []
@@ -106,6 +124,7 @@ def _flatten_racecards(raw: dict[str, Any]) -> list[dict[str, Any]]:
                     "recent_form": runner.get("form"),
                     "current_odds": current_odds,
                     "non_runner": runner.get("non_runner") or runner.get("is_non_runner"),
+                    "horse_id": runner.get("horse_id") or runner.get("id"),
                     "source_runner": runner,
                 }
             )
@@ -118,3 +137,14 @@ def _csv_values(value: Any) -> list[str]:
     if isinstance(value, list):
         return [str(item).strip() for item in value if str(item).strip()]
     return [item.strip() for item in str(value).split(",") if item.strip()]
+
+
+def _horse_id(runner: Runner) -> str | None:
+    payload = runner.source_payload
+    source_runner = payload.get("source_runner")
+    for source in (payload, source_runner if isinstance(source_runner, dict) else {}):
+        for key in ("horse_id", "id"):
+            value = source.get(key)
+            if value not in (None, ""):
+                return str(value)
+    return None
