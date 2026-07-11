@@ -1,12 +1,12 @@
 # Ian Racing Model
 
-Ian Racing Model is a read-only UK horse-racing research dashboard. It imports daily racecards, rejects runners that do not match the requested date or course, excludes non-runners from scoring, and ranks eligible runners with Ian Formula V3.1.
+Ian Racing Model is a read-only UK horse-racing research dashboard. It imports daily UK racecards, rejects runners that do not match the requested date or optional course filter, excludes non-runners from scoring, and ranks eligible runners with Ian Formula V3.1.
 
 This is a research and tracking tool, not an automated betting system. It contains no bet placement functionality.
 
 ## Features
 
-- Streamlit dashboard with date, course, and race selectors
+- Streamlit dashboard with date, all-course UK view, optional course filter, and race selector
 - Replaceable `RacingDataProvider` interface
 - Mock provider so the app runs without API credentials
 - The Racing API adapter with endpoint URLs and field mapping isolated in config
@@ -35,11 +35,12 @@ RACING_DATA_PROVIDER = "mock"
 DATABASE_URL = "sqlite:///ian_racing_model.db"
 ```
 
-To use The Racing API later, add:
+To use The Racing API, add:
 
 ```toml
 RACING_DATA_PROVIDER = "the_racing_api"
 RACING_API_BASE_URL = "https://api.theracingapi.com/v1"
+RACING_API_REGION_CODES = "gb"
 RACING_API_USERNAME = "your_username"
 RACING_API_PASSWORD = "your_password"
 DATABASE_URL = "sqlite:///ian_racing_model.db"
@@ -70,7 +71,7 @@ DATABASE_URL=sqlite:///ian_racing_model.db
 streamlit run app/streamlit_app.py
 ```
 
-The mock sample is dated `2026-07-11` and includes Ascot runners. The sample also includes a wrong-date runner, a wrong-course runner, and a non-runner so validation rules are visible in tests.
+The mock sample is dated `2026-07-11` and includes Ascot and York runners. The sample also includes a wrong-date runner and a non-runner so validation rules are visible in tests. Course-specific validation is covered by requesting Ascot and confirming York is excluded from that filtered card.
 
 ## Run Tests
 
