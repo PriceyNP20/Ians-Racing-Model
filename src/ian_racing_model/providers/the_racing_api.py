@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import time
 from typing import Any
 
 import requests
@@ -72,14 +73,18 @@ class TheRacingApiProvider(RacingDataProvider):
 
         endpoint = str(self.config["horse_results_endpoint"]).format(horse_id=horse_id)
         url = self.config["base_url"].rstrip("/") + endpoint
-        response = self.session.get(
-            url,
-            params={"limit": limit},
-            auth=(username, password),
-            timeout=30,
-        )
-        response.raise_for_status()
-        return response.json()
+        for attempt in range(3):
+            response = self.session.get(
+                url,
+                params={"limit": limit},
+                auth=(username, password),
+                timeout=30,
+            )
+            if response.status_code != 429 or attempt == 2:
+                response.raise_for_status()
+                return response.json()
+            time.sleep(1.0 + attempt)
+        return {}
 
 
 def _flatten_racecards(raw: dict[str, Any]) -> list[dict[str, Any]]:
