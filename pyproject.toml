@@ -2,17 +2,18 @@
 name = "ian-racing-model"
 version = "0.1.0"
 description = "Read-only UK horse-racing research dashboard with configurable runner scoring."
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
-    "streamlit>=1.36",
-    "SQLAlchemy>=2.0",
-    "pandas>=2.2",
-    "requests>=2.32",
-    "python-dotenv>=1.0",
+    "streamlit>=1.36,<1.50",
+    "SQLAlchemy>=2.0,<2.1",
+    "pandas>=2.2,<3",
+    "pyarrow>=16,<19",
+    "requests>=2.32,<3",
+    "python-dotenv>=1.0,<2",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.2"]
+dev = ["pytest>=8.2,<10"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
