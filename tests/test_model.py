@@ -5,6 +5,7 @@ from datetime import date
 from ian_racing_model.config import IAN_FORMULA_V3_1_WEIGHTS, SAMPLE_DATA_DIR
 from ian_racing_model.model.scoring import IanFormulaV31
 from ian_racing_model.providers.mock import MockRacingDataProvider
+from ian_racing_model.ui import screener_dataframe
 
 
 def test_weights_total_100() -> None:
@@ -48,3 +49,13 @@ def test_score_remains_between_0_and_100() -> None:
     scores = IanFormulaV31().score_runners(runners)
     assert scores
     assert all(0 <= score.total_score <= 100 for score in scores)
+
+
+def test_screener_orders_top_matches_and_value_signal() -> None:
+    provider = MockRacingDataProvider(SAMPLE_DATA_DIR / "mock_racecard.json")
+    runners, _ = provider.fetch_racecard(date(2026, 7, 11), "Ascot")
+    scores = IanFormulaV31().score_runners(runners)
+    screener = screener_dataframe(scores)
+    assert not screener.empty
+    assert screener.iloc[0]["score"] >= screener.iloc[-1]["score"]
+    assert "value_edge_pct" in screener.columns
