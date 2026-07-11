@@ -11,7 +11,7 @@ import streamlit as st
 
 from ian_racing_model.config import Settings
 from ian_racing_model.services import get_scored_card_result
-from ian_racing_model.ui import default_date, scores_to_dataframe, screener_dataframe
+from ian_racing_model.ui import available_courses, default_date, scores_to_dataframe, screener_dataframe
 
 
 st.set_page_config(page_title="Ian Racing Model", layout="wide")
@@ -62,17 +62,23 @@ st.caption("Read-only UK horse-racing research and tracking dashboard.")
 
 settings = Settings()
 selected_date = st.date_input("Meeting date", value=default_date())
-course = st.text_input("Course", value="Ascot")
 
-result = get_scored_card_result(selected_date, course, settings)
+result = get_scored_card_result(selected_date, None, settings)
 if result.warning:
     st.warning(result.warning)
 st.caption(f"Data source: {result.provider}")
 scores = result.scores
-df = scores_to_dataframe(scores)
+
+course_options = ["All UK courses"] + available_courses(scores)
+selected_course = st.selectbox("Course", course_options)
+display_scores = scores
+if selected_course != "All UK courses":
+    display_scores = [score for score in display_scores if score.runner.course == selected_course]
+
+df = scores_to_dataframe(display_scores)
 
 st.subheader("Screener")
-screener_df = screener_dataframe(scores, limit=8)
+screener_df = screener_dataframe(display_scores, limit=8)
 if screener_df.empty:
     st.info("No eligible runners available for the screener.")
 else:
@@ -104,6 +110,7 @@ race_options = ["All races"] + sorted(df["race"].dropna().unique().tolist()) if 
 race = st.selectbox("Race", race_options)
 if race != "All races":
     df = df[df["race"] == race]
+    display_scores = [score for score in display_scores if score.runner.race_name == race]
 
 st.subheader("Ranked runners")
 st.dataframe(df, width="stretch", hide_index=True)
@@ -115,9 +122,7 @@ st.download_button(
 )
 
 with st.expander("Component explanations", expanded=False):
-    for score in scores:
-        if race != "All races" and score.runner.race_name != race:
-            continue
+    for score in display_scores:
         st.markdown(f"**{score.runner.horse}** - {score.recommendation}")
         st.write(
             {
