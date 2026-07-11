@@ -19,3 +19,7 @@ class RacingDataProvider(ABC):
     def fetch_results(self, meeting_date: date) -> dict[str, Any]:
         """Return raw results for a date when the provider supports results."""
         return {}
+
+    def fetch_horse_history(self, runner: Runner, limit: int = 6) -> dict[str, Any]:
+        """Return recent horse results when the provider supports runner history."""
+        return {}
