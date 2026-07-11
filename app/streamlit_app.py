@@ -22,6 +22,7 @@ from ian_racing_model.ui import (
     picks_tracker_summary,
     scores_to_dataframe,
     screener_dataframe,
+    value_screener_dataframe,
 )
 
 
@@ -120,6 +121,14 @@ else:
     with st.expander("Open full screener list", expanded=True):
         st.dataframe(screener_df, width="stretch", hide_index=True)
     st.caption("Screener signals are for research only. They do not place or automate bets.")
+
+st.subheader("Best Value")
+value_df = value_screener_dataframe(display_scores, limit=10)
+if value_df.empty:
+    st.info("No positive model-versus-market value edges are available from the current odds.")
+else:
+    st.dataframe(value_df, width="stretch", hide_index=True)
+    st.caption("Value edge compares model probability against available odds. It is for research only.")
 
 race_options = ["All races"] + sorted(df["race"].dropna().unique().tolist()) if not df.empty else ["All races"]
 race = st.selectbox("Race", race_options)
