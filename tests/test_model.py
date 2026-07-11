@@ -12,10 +12,12 @@ from ian_racing_model.providers.mock import MockRacingDataProvider
 from ian_racing_model.services import _attach_results
 from ian_racing_model.ui import (
     outsider_last_time_dataframe,
+    performance_by_odds_band,
     picks_tracker_breakdown,
     picks_tracker_dataframe,
     picks_tracker_summary,
     screener_dataframe,
+    value_screener_dataframe,
 )
 
 
@@ -69,6 +71,20 @@ def test_score_remains_between_0_and_100() -> None:
     assert all(0 <= score.total_score <= 100 for score in scores)
 
 
+def test_probabilities_and_fair_odds_are_calibrated_by_race() -> None:
+    provider = MockRacingDataProvider(SAMPLE_DATA_DIR / "mock_racecard.json")
+    runners, _ = provider.fetch_racecard(date(2026, 7, 11), "Ascot")
+    scores = IanFormulaV31().score_runners(runners)
+    first_race = [
+        score
+        for score in scores
+        if score.runner.race_name == "Ian Racing Model Sample Handicap"
+    ]
+    assert round(sum(score.win_probability for score in first_race), 2) == 1.0
+    assert all(score.place_probability >= score.win_probability for score in first_race)
+    assert all(score.fair_win_odds is not None for score in first_race)
+
+
 def test_screener_orders_top_matches_and_value_signal() -> None:
     provider = MockRacingDataProvider(SAMPLE_DATA_DIR / "mock_racecard.json")
     runners, _ = provider.fetch_racecard(date(2026, 7, 11), "Ascot")
@@ -77,6 +93,15 @@ def test_screener_orders_top_matches_and_value_signal() -> None:
     assert not screener.empty
     assert screener.iloc[0]["score"] >= screener.iloc[-1]["score"]
     assert "value_edge_pct" in screener.columns
+
+
+def test_value_screener_uses_model_market_edge() -> None:
+    provider = MockRacingDataProvider(SAMPLE_DATA_DIR / "mock_racecard.json")
+    runners, _ = provider.fetch_racecard(date(2026, 7, 11), "Ascot")
+    scores = IanFormulaV31().score_runners(runners)
+    value = value_screener_dataframe(scores)
+    assert "fair_win_odds" in value.columns or value.empty
+    assert "place_value_edge" in value.columns or value.empty
 
 
 def test_picks_tracker_selects_winner_and_each_way_per_race() -> None:
@@ -133,6 +158,19 @@ def test_picks_tracker_breakdown_explains_matching_headline_rates() -> None:
     assert breakdown.loc["Winner pick", "places"] == 1
     assert breakdown.loc["Best EW pick", "wins"] == 0
     assert breakdown.loc["Best EW pick", "places"] == 1
+
+
+def test_performance_by_odds_band_groups_settled_picks() -> None:
+    tracker = pd.DataFrame(
+        [
+            {"pick_type": "Winner pick", "outcome": "WIN", "odds": "2/1"},
+            {"pick_type": "Winner pick", "outcome": "LOSE", "odds": "12/1"},
+            {"pick_type": "Best EW pick", "outcome": "PLACED", "odds": "8/1"},
+        ]
+    )
+    by_band = performance_by_odds_band(tracker)
+    assert not by_band.empty
+    assert set(by_band["pick_type"]) == {"Winner pick", "Best EW pick"}
 
 
 def test_outsider_last_time_signal_uses_verified_history_fields() -> None:
