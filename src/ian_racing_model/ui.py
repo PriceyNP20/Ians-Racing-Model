@@ -140,12 +140,12 @@ def value_screener_dataframe(scores: list[RunnerScore], limit: int = 10) -> pd.D
 def picks_tracker_dataframe(scores: list[RunnerScore]) -> pd.DataFrame:
     rows = []
     for (_, _, _, _), race_scores in _race_groups(scores).items():
-        sorted_scores = sorted(race_scores, key=lambda item: item.total_score, reverse=True)
+        sorted_scores = sorted(race_scores, key=_winner_selection_score, reverse=True)
         winner_pick = sorted_scores[0]
-        ew_pick = _best_each_way_pick(sorted_scores, winner_pick)
-        rows.append(_pick_row(winner_pick, "Winner pick"))
+        ew_pick = _best_each_way_pick(race_scores, winner_pick)
+        rows.append(_pick_row(winner_pick, "Winner pick", _winner_selection_score(winner_pick)))
         if ew_pick is not None:
-            rows.append(_pick_row(ew_pick, "Best EW pick"))
+            rows.append(_pick_row(ew_pick, "Best EW pick", _each_way_selection_score(ew_pick)))
 
     if not rows:
         return pd.DataFrame()
@@ -381,31 +381,21 @@ def _race_groups(scores: list[RunnerScore]) -> dict[tuple[date, str, str, str], 
 
 
 def _best_each_way_pick(
-    sorted_scores: list[RunnerScore], winner_pick: RunnerScore
+    race_scores: list[RunnerScore], winner_pick: RunnerScore
 ) -> RunnerScore | None:
-    candidates = [score for score in sorted_scores if score.runner.horse != winner_pick.runner.horse]
+    candidates = [score for score in race_scores if score.runner.horse != winner_pick.runner.horse]
     if not candidates:
-        candidates = sorted_scores
+        candidates = race_scores
     ew_candidates = [
         score
         for score in candidates
-        if score.recommendation in {"EACH_WAY", "PLACE", "WATCH"}
-        and (_decimal_odds(score.runner.current_odds) or 0) >= 5
+        if _is_each_way_candidate(score)
     ]
     pool = ew_candidates or candidates
-    return sorted(
-        pool,
-        key=lambda score: (
-            score.place_value_edge if score.place_value_edge is not None else -1,
-            score.win_value_edge if score.win_value_edge is not None else -1,
-            score.total_score,
-            score.confidence,
-        ),
-        reverse=True,
-    )[0]
+    return sorted(pool, key=_each_way_selection_score, reverse=True)[0]
 
 
-def _pick_row(item: RunnerScore, pick_type: str) -> dict[str, Any]:
+def _pick_row(item: RunnerScore, pick_type: str, selection_score: float) -> dict[str, Any]:
     runner = item.runner
     position = _finish_position(runner.source_payload)
     place_cutoff = _place_cutoff(runner.field_size)
@@ -416,6 +406,8 @@ def _pick_row(item: RunnerScore, pick_type: str) -> dict[str, Any]:
         "race": runner.race_name,
         "pick_type": pick_type,
         "horse": runner.horse,
+        "selection_score": round(selection_score, 2),
+        "selection_reason": _selection_reason(item, pick_type),
         "score": item.total_score,
         "confidence": item.confidence,
         "odds": runner.current_odds or "Unavailable",
@@ -431,6 +423,74 @@ def _pick_row(item: RunnerScore, pick_type: str) -> dict[str, Any]:
         "place_cutoff": place_cutoff,
         "warnings": "; ".join((item.red_flags or item.data_quality_warnings)[:3]),
     }
+
+
+def _winner_selection_score(item: RunnerScore) -> float:
+    win_probability = item.win_probability or 0.0
+    win_edge = item.win_value_edge if item.win_value_edge is not None else 0.0
+    red_flag_drag = min(0.2, len(item.red_flags) * 0.035)
+    return (
+        win_probability * 100.0
+        + item.total_score * 0.55
+        + item.confidence * 12.0
+        + max(-0.08, min(0.16, win_edge)) * 100.0
+        - red_flag_drag * 100.0
+    )
+
+
+def _each_way_selection_score(item: RunnerScore) -> float:
+    place_probability = item.place_probability or 0.0
+    place_edge = item.place_value_edge if item.place_value_edge is not None else 0.0
+    odds = _decimal_odds(item.runner.current_odds)
+    price_bonus = _each_way_price_bonus(odds)
+    red_flag_drag = min(0.18, len(item.red_flags) * 0.03)
+    return (
+        place_probability * 100.0
+        + item.total_score * 0.28
+        + item.confidence * 16.0
+        + max(-0.05, min(0.22, place_edge)) * 140.0
+        + price_bonus
+        - red_flag_drag * 100.0
+    )
+
+
+def _is_each_way_candidate(item: RunnerScore) -> bool:
+    odds = _decimal_odds(item.runner.current_odds)
+    if odds is not None and odds < 4.0:
+        return False
+    if item.place_probability >= 0.35:
+        return True
+    if item.place_value_edge is not None and item.place_value_edge > 0:
+        return True
+    return item.recommendation in {"EACH_WAY", "PLACE", "WATCH"}
+
+
+def _each_way_price_bonus(odds: float | None) -> float:
+    if odds is None:
+        return 0.0
+    if 5.0 <= odds <= 14.0:
+        return 8.0
+    if 14.0 < odds <= 26.0:
+        return 5.0
+    if odds > 26.0:
+        return 1.5
+    return -4.0
+
+
+def _selection_reason(item: RunnerScore, pick_type: str) -> str:
+    if pick_type == "Winner pick":
+        parts = [
+            f"win { _format_probability(item.win_probability) }",
+            f"edge { _format_edge(item.win_value_edge) }",
+        ]
+    else:
+        parts = [
+            f"place { _format_probability(item.place_probability) }",
+            f"place edge { _format_edge(item.place_value_edge) }",
+        ]
+    if item.red_flags:
+        parts.append(f"{len(item.red_flags)} red flag(s)")
+    return "; ".join(parts)
 
 
 def _pick_outcome(pick_type: str, position: int | None, place_cutoff: int) -> str:
