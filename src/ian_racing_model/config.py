@@ -50,6 +50,7 @@ IAN_FORMULA_V3_1_WEIGHTS: dict[str, int] = {
 THE_RACING_API_CONFIG = {
     "base_url": get_setting("RACING_API_BASE_URL", "https://api.theracingapi.com/v1"),
     "racecards_endpoint": get_setting("RACING_API_RACECARDS_ENDPOINT", "/racecards/pro"),
+    "results_endpoint": get_setting("RACING_API_RESULTS_ENDPOINT", "/results"),
     "racecards_region_codes": get_setting("RACING_API_REGION_CODES", "gb"),
     "auth": {
         "username_env": "RACING_API_USERNAME",
@@ -86,7 +87,9 @@ THE_RACING_API_CONFIG = {
 class Settings:
     provider: str = get_setting("RACING_DATA_PROVIDER", "mock")
     database_url: str = get_setting("DATABASE_URL", "sqlite:///ian_racing_model.db")
-    sample_racecard_path: Path = field(default_factory=lambda: SAMPLE_DATA_DIR / "mock_racecard.json")
+    sample_racecard_path: Path = field(
+        default_factory=lambda: SAMPLE_DATA_DIR / "mock_racecard.json"
+    )
 
 
 def validate_weights(weights: dict[str, int] | None = None) -> None:
