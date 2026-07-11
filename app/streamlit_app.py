@@ -14,6 +14,8 @@ from ian_racing_model.services import get_scored_card_result
 from ian_racing_model.ui import (
     available_courses,
     default_date,
+    model_upgrade_notes,
+    outsider_last_time_dataframe,
     picks_tracker_dataframe,
     picks_tracker_style,
     picks_tracker_summary,
@@ -135,6 +137,17 @@ else:
     ew_metric.metric("Best EW place rate", summary["ew_place_rate"])
     st.dataframe(picks_tracker_style(picks_df), width="stretch", hide_index=True)
     st.caption("Green means won or placed, red means lost, and blue means just missed. Unsettled rows wait for verified results.")
+
+st.subheader("Outsider Last-Time Signals")
+outsider_df = outsider_last_time_dataframe(display_scores)
+if outsider_df.empty:
+    st.info("No verified last-time rank-outsider win/place signals are available in the imported fields.")
+else:
+    st.dataframe(outsider_df, width="stretch", hide_index=True)
+
+with st.expander("Model Edge Upgrade Notes", expanded=False):
+    for note in model_upgrade_notes():
+        st.markdown(f"- {note}")
 
 st.subheader("Ranked runners")
 st.dataframe(df, width="stretch", hide_index=True)
