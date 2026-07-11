@@ -12,6 +12,7 @@ from ian_racing_model.providers.mock import MockRacingDataProvider
 from ian_racing_model.services import _attach_results
 from ian_racing_model.ui import (
     outsider_last_time_dataframe,
+    picks_tracker_breakdown,
     picks_tracker_dataframe,
     picks_tracker_summary,
     screener_dataframe,
@@ -116,6 +117,22 @@ def test_picks_tracker_summary_uses_separate_category_denominators() -> None:
     summary = picks_tracker_summary(tracker)
     assert summary["winner_win_rate"] == "50.0% (1/2)"
     assert summary["ew_place_rate"] == "100.0% (1/1)"
+
+
+def test_picks_tracker_breakdown_explains_matching_headline_rates() -> None:
+    tracker = pd.DataFrame(
+        [
+            {"pick_type": "Winner pick", "outcome": "WIN", "result": "1", "place_cutoff": 3},
+            {"pick_type": "Winner pick", "outcome": "LOSE", "result": "5", "place_cutoff": 3},
+            {"pick_type": "Best EW pick", "outcome": "PLACED", "result": "3", "place_cutoff": 3},
+            {"pick_type": "Best EW pick", "outcome": "LOSE", "result": "8", "place_cutoff": 3},
+        ]
+    )
+    breakdown = picks_tracker_breakdown(tracker).set_index("pick_type")
+    assert breakdown.loc["Winner pick", "wins"] == 1
+    assert breakdown.loc["Winner pick", "places"] == 1
+    assert breakdown.loc["Best EW pick", "wins"] == 0
+    assert breakdown.loc["Best EW pick", "places"] == 1
 
 
 def test_outsider_last_time_signal_uses_verified_history_fields() -> None:
