@@ -26,6 +26,13 @@ def test_wrong_course_runners_are_rejected() -> None:
     assert "Different Track" not in {runner.horse for runner in runners}
 
 
+def test_all_courses_are_loaded_when_course_is_not_requested() -> None:
+    provider = MockRacingDataProvider(SAMPLE_DATA_DIR / "mock_racecard.json")
+    runners, _ = provider.fetch_racecard(date(2026, 7, 11), None)
+    assert {"Ascot", "York"} <= {runner.course for runner in runners}
+    assert "Different Track" in {runner.horse for runner in runners}
+
+
 def test_non_runners_are_excluded_from_scoring() -> None:
     provider = MockRacingDataProvider(SAMPLE_DATA_DIR / "mock_racecard.json")
     runners, _ = provider.fetch_racecard(date(2026, 7, 11), "Ascot")
