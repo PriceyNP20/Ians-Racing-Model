@@ -3,12 +3,15 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import date
 
+import pandas as pd
+
 from ian_racing_model.config import IAN_FORMULA_V3_1_WEIGHTS, SAMPLE_DATA_DIR
 from ian_racing_model.domain import RunnerScore
 from ian_racing_model.model.scoring import IanFormulaV31
 from ian_racing_model.providers.mock import MockRacingDataProvider
 from ian_racing_model.services import _attach_results
 from ian_racing_model.ui import (
+    outsider_last_time_dataframe,
     picks_tracker_dataframe,
     picks_tracker_summary,
     screener_dataframe,
@@ -100,6 +103,39 @@ def test_picks_tracker_summary_counts_settled_results() -> None:
     summary = picks_tracker_summary(tracker)
     assert "%" in summary["winner_win_rate"]
     assert "%" in summary["ew_place_rate"]
+
+
+def test_picks_tracker_summary_uses_separate_category_denominators() -> None:
+    tracker = pd.DataFrame(
+        [
+            {"pick_type": "Winner pick", "outcome": "WIN"},
+            {"pick_type": "Winner pick", "outcome": "LOSE"},
+            {"pick_type": "Best EW pick", "outcome": "PLACED"},
+        ]
+    )
+    summary = picks_tracker_summary(tracker)
+    assert summary["winner_win_rate"] == "50.0% (1/2)"
+    assert summary["ew_place_rate"] == "100.0% (1/1)"
+
+
+def test_outsider_last_time_signal_uses_verified_history_fields() -> None:
+    provider = MockRacingDataProvider(SAMPLE_DATA_DIR / "mock_racecard.json")
+    runners, _ = provider.fetch_racecard(date(2026, 7, 11), "Ascot")
+    scores = IanFormulaV31().score_runners(runners)
+    score = next(score for score in scores if score.runner.horse == "Measured Move")
+    enriched = replace(
+        score,
+        runner=replace(
+            score.runner,
+            source_payload={
+                **score.runner.source_payload,
+                "previous_result": {"position": "2", "sp_dec": "34.0"},
+            },
+        ),
+    )
+    signals = outsider_last_time_dataframe([enriched])
+    assert not signals.empty
+    assert signals.iloc[0]["horse"] == "Measured Move"
 
 
 def test_results_are_attached_to_matching_runners() -> None:
