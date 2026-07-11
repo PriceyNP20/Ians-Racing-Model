@@ -14,6 +14,8 @@ This is a research and tracking tool, not an automated betting system. It contai
 - Configurable 100-point Ian Formula V3.1 weights
 - Component-level score, confidence, data-quality flag, and explanation
 - Red-flag deductions for trip, class, draw, handicap mark, going, absence, jumping errors, and short prices
+- Selections tracker with one winner pick and one best each-way pick per race
+- Winner-pick win rate and best-EW place-rate indicators once verified results are available
 - CSV export
 - Separate pages for today's cards, top selections, results, model performance, and settings
 - Automated tests for core data and scoring rules
