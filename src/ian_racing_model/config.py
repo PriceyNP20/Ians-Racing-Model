@@ -47,7 +47,7 @@ IAN_FORMULA_V3_1_WEIGHTS: dict[str, int] = {
 
 THE_RACING_API_CONFIG = {
     "base_url": get_setting("RACING_API_BASE_URL", "https://api.theracingapi.com/v1"),
-    "racecards_endpoint": "/racecards",
+    "racecards_endpoint": get_setting("RACING_API_RACECARDS_ENDPOINT", "/racecards/pro"),
     "auth": {
         "username_env": "RACING_API_USERNAME",
         "password_env": "RACING_API_PASSWORD",
