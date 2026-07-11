@@ -9,7 +9,7 @@ from ian_racing_model.config import IAN_FORMULA_V3_1_WEIGHTS, SAMPLE_DATA_DIR
 from ian_racing_model.domain import RunnerScore
 from ian_racing_model.model.scoring import IanFormulaV31
 from ian_racing_model.providers.mock import MockRacingDataProvider
-from ian_racing_model.services import _attach_results
+from ian_racing_model.services import _attach_horse_history, _attach_results
 from ian_racing_model.ui import (
     outsider_last_time_dataframe,
     performance_by_odds_band,
@@ -102,6 +102,32 @@ def test_value_screener_uses_model_market_edge() -> None:
     value = value_screener_dataframe(scores)
     assert "fair_win_odds" in value.columns or value.empty
     assert "place_value_edge" in value.columns or value.empty
+    assert "value_confidence" in value.columns or value.empty
+
+
+def test_horse_history_improves_evidence_components() -> None:
+    provider = MockRacingDataProvider(SAMPLE_DATA_DIR / "mock_racecard.json")
+    runners, _ = provider.fetch_racecard(date(2026, 7, 11), "Ascot")
+    measured = next(runner for runner in runners if runner.horse == "Measured Move")
+    enriched_runner = replace(
+        measured,
+        source_payload={
+            **measured.source_payload,
+            "horse_history": [
+                {
+                    "course": "Ascot",
+                    "distance": measured.distance,
+                    "race_class": measured.race_class,
+                    "position": "1",
+                }
+            ],
+        },
+    )
+    score = IanFormulaV31().score_runner(enriched_runner)
+    components = {component.name: component for component in score.components}
+    assert components["course_suitability"].confidence >= 0.7
+    assert components["course_suitability"].score > 5.8
+    assert "horse history" in components["current_performance"].explanation
 
 
 def test_picks_tracker_selects_winner_and_each_way_per_race() -> None:
@@ -191,6 +217,50 @@ def test_outsider_last_time_signal_uses_verified_history_fields() -> None:
     signals = outsider_last_time_dataframe([enriched])
     assert not signals.empty
     assert signals.iloc[0]["horse"] == "Measured Move"
+
+
+def test_outsider_last_time_signal_uses_fetched_horse_history() -> None:
+    provider = MockRacingDataProvider(SAMPLE_DATA_DIR / "mock_racecard.json")
+    runners, _ = provider.fetch_racecard(date(2026, 7, 11), "Ascot")
+    scores = IanFormulaV31().score_runners(runners)
+    score = next(score for score in scores if score.runner.horse == "Measured Move")
+    enriched = replace(
+        score,
+        runner=replace(
+            score.runner,
+            source_payload={
+                **score.runner.source_payload,
+                "horse_history": [{"position": "3", "sp": "20/1"}],
+            },
+        ),
+    )
+    signals = outsider_last_time_dataframe([enriched])
+    assert not signals.empty
+    assert signals.iloc[0]["signal"] == "Won/placed at big odds last time"
+
+
+def test_horse_history_is_attached_without_breaking_card() -> None:
+    class HistoryProvider:
+        def fetch_horse_history(self, runner, limit: int = 6) -> dict:
+            return {"results": [{"course": "Ascot", "position": "2", "sp": "33/1"}]}
+
+    provider = MockRacingDataProvider(SAMPLE_DATA_DIR / "mock_racecard.json")
+    runners, _ = provider.fetch_racecard(date(2026, 7, 11), "Ascot")
+    merged = _attach_horse_history(
+        HistoryProvider(),
+        settings=type(
+            "SettingsStub",
+            (),
+            {
+                "provider": "mock",
+                "database_url": "sqlite:///:memory:",
+            },
+        )(),
+        meeting_date=date(2026, 7, 11),
+        course="Ascot",
+        runners=runners[:1],
+    )
+    assert merged[0].source_payload["horse_history"][0]["position"] == "2"
 
 
 def test_results_are_attached_to_matching_runners() -> None:
