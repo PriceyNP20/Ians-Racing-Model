@@ -9,11 +9,16 @@ sys.path.insert(0, str(ROOT / "src"))
 import streamlit as st
 
 from ian_racing_model.config import Settings
-from ian_racing_model.services import get_scored_card
+from ian_racing_model.services import get_scored_card_result
 from ian_racing_model.ui import default_date, scores_to_dataframe
 
+
 st.title("Top Selections")
-scores = get_scored_card(default_date(), "Ascot", Settings())
+result = get_scored_card_result(default_date(), "Ascot", Settings())
+if result.warning:
+    st.warning(result.warning)
+st.caption(f"Data source: {result.provider}")
+scores = result.scores
 df = scores_to_dataframe(scores)
 if not df.empty:
     df = df[df["recommendation"].isin(["WIN", "EACH_WAY", "PLACE"])].head(10)
