@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 from ian_racing_model.config import IAN_FORMULA_V3_1_WEIGHTS, SAMPLE_DATA_DIR
+from ian_racing_model.domain import RunnerScore
 from ian_racing_model.model.scoring import IanFormulaV31
 from ian_racing_model.providers.mock import MockRacingDataProvider
-from ian_racing_model.ui import screener_dataframe
+from ian_racing_model.ui import (
+    picks_tracker_dataframe,
+    picks_tracker_summary,
+    screener_dataframe,
+)
 
 
 def test_weights_total_100() -> None:
@@ -66,3 +72,30 @@ def test_screener_orders_top_matches_and_value_signal() -> None:
     assert not screener.empty
     assert screener.iloc[0]["score"] >= screener.iloc[-1]["score"]
     assert "value_edge_pct" in screener.columns
+
+
+def test_picks_tracker_selects_winner_and_each_way_per_race() -> None:
+    provider = MockRacingDataProvider(SAMPLE_DATA_DIR / "mock_racecard.json")
+    runners, _ = provider.fetch_racecard(date(2026, 7, 11), None)
+    scores = IanFormulaV31().score_runners(runners)
+    tracker = picks_tracker_dataframe(scores)
+    assert {"Winner pick", "Best EW pick"} <= set(tracker["pick_type"])
+    assert tracker.groupby(["course", "off_time", "race"]).size().max() <= 2
+
+
+def test_picks_tracker_summary_counts_settled_results() -> None:
+    provider = MockRacingDataProvider(SAMPLE_DATA_DIR / "mock_racecard.json")
+    runners, _ = provider.fetch_racecard(date(2026, 7, 11), "Ascot")
+    scores = IanFormulaV31().score_runners(runners)
+    settled_scores: list[RunnerScore] = []
+    for index, score in enumerate(scores):
+        settled_scores.append(
+            replace(
+                score,
+                runner=replace(score.runner, source_payload={"result_position": index + 1}),
+            )
+        )
+    tracker = picks_tracker_dataframe(settled_scores)
+    summary = picks_tracker_summary(tracker)
+    assert "%" in summary["winner_win_rate"]
+    assert "%" in summary["ew_place_rate"]
