@@ -107,11 +107,45 @@ class IanFormulaV31:
     def _course_suitability(self, runner: Runner) -> FeatureValue:
         if not runner.course:
             return FeatureValue(40, 0.35, DATA_MISSING, "Course unavailable.")
+        history = _history_items(runner)
+        if history:
+            course_runs = [
+                item for item in history if _text_match(runner.course, _history_text(item, "course"))
+            ]
+            if course_runs:
+                placed = sum(1 for item in course_runs if (_history_position(item) or 99) <= 3)
+                wins = sum(1 for item in course_runs if _history_position(item) == 1)
+                score = min(82, 58 + wins * 12 + placed * 6)
+                return FeatureValue(
+                    score,
+                    0.75,
+                    DATA_OK,
+                    "Course suitability scored from recent horse history.",
+                )
+            return FeatureValue(52, 0.65, DATA_PARTIAL, "No recent course evidence in horse history.")
         return FeatureValue(58, 0.45, DATA_PARTIAL, "No course-history feed available; using neutral baseline.")
 
     def _distance_suitability(self, runner: Runner) -> FeatureValue:
         if not runner.distance:
             return FeatureValue(40, 0.35, DATA_MISSING, "Distance unavailable.")
+        history = _history_items(runner)
+        if history:
+            distance_runs = [
+                item
+                for item in history
+                if _distance_match(runner.distance, _history_text(item, "distance", "dist"))
+            ]
+            if distance_runs:
+                placed = sum(1 for item in distance_runs if (_history_position(item) or 99) <= 3)
+                wins = sum(1 for item in distance_runs if _history_position(item) == 1)
+                score = min(82, 58 + wins * 12 + placed * 6)
+                return FeatureValue(
+                    score,
+                    0.75,
+                    DATA_OK,
+                    "Trip suitability scored from recent horse history.",
+                )
+            return FeatureValue(50, 0.65, DATA_PARTIAL, "No proven recent run at this trip in horse history.")
         if any(token in runner.distance.lower() for token in ["3m", "2m7f", "2m6f"]):
             return FeatureValue(50, 0.5, DATA_PARTIAL, "Stamina trip noted without full trip history.")
         return FeatureValue(58, 0.45, DATA_PARTIAL, "Distance present but prior suitability unavailable.")
@@ -119,11 +153,39 @@ class IanFormulaV31:
     def _class_strength(self, runner: Runner) -> FeatureValue:
         if not runner.race_class:
             return FeatureValue(45, 0.35, DATA_MISSING, "Race class unavailable.")
+        today_class = _class_number(runner.race_class)
+        history = _history_items(runner)
+        if history and today_class is not None:
+            class_runs = [
+                (_class_number(_history_text(item, "race_class", "class")), _history_position(item))
+                for item in history[:5]
+            ]
+            class_runs = [(race_class, position) for race_class, position in class_runs if race_class]
+            if class_runs:
+                same_or_stronger_places = sum(
+                    1
+                    for race_class, position in class_runs
+                    if race_class <= today_class and position is not None and position <= 3
+                )
+                last_class = class_runs[0][0]
+                if same_or_stronger_places:
+                    return FeatureValue(70, 0.72, DATA_OK, "Placed at this class level or stronger in horse history.")
+                if last_class and last_class > today_class:
+                    return FeatureValue(46, 0.68, DATA_PARTIAL, "Class rise detected from recent horse history.")
+                return FeatureValue(56, 0.65, DATA_PARTIAL, "Class evidence available but no strong positive.")
         if "2" in runner.race_class or "1" in runner.race_class:
             return FeatureValue(52, 0.55, DATA_PARTIAL, "Stronger class band requires caution.")
         return FeatureValue(62, 0.55, DATA_PARTIAL, "Class band appears ordinary from available label.")
 
     def _current_performance(self, runner: Runner) -> FeatureValue:
+        history_positions = [
+            position for position in (_history_position(item) for item in _history_items(runner)[:4]) if position
+        ]
+        if history_positions:
+            avg = sum(history_positions) / len(history_positions)
+            in_frame = sum(1 for position in history_positions if position <= 3)
+            score = max(30, min(84, 84 - avg * 7 + in_frame * 4))
+            return FeatureValue(score, 0.75, DATA_OK, "Scored from recent horse history finishing positions.")
         if not runner.recent_form:
             return FeatureValue(42, 0.35, DATA_MISSING, "Recent form unavailable.")
         digits = [int(ch) for ch in runner.recent_form if ch.isdigit()]
@@ -255,6 +317,86 @@ def _decimal_odds(value: str | None) -> float | None:
         return float(text)
     except ValueError:
         return None
+
+
+def _history_items(runner: Runner) -> list[dict]:
+    payload = runner.source_payload
+    keys = (
+        "horse_history",
+        "history",
+        "results",
+        "past_results",
+        "horse_results",
+        "last_result",
+        "previous_result",
+    )
+    items: list[dict] = []
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, list):
+            items.extend(item for item in value if isinstance(item, dict))
+        elif isinstance(value, dict):
+            items.append(value)
+    source_runner = payload.get("source_runner")
+    if isinstance(source_runner, dict):
+        for key in keys:
+            value = source_runner.get(key)
+            if isinstance(value, list):
+                items.extend(item for item in value if isinstance(item, dict))
+            elif isinstance(value, dict):
+                items.append(value)
+    return items
+
+
+def _history_position(item: dict) -> int | None:
+    for key in ("position", "pos", "finishing_position", "finish_position", "result_position", "place"):
+        value = item.get(key)
+        if value in (None, ""):
+            continue
+        text = str(value).strip().lower()
+        if text in {"nr", "pu", "f", "ur", "bd"}:
+            return None
+        digits = "".join(ch for ch in text if ch.isdigit())
+        if not digits:
+            continue
+        try:
+            return int(digits)
+        except ValueError:
+            continue
+    return None
+
+
+def _history_text(item: dict, *keys: str) -> str:
+    for key in keys:
+        value = item.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return ""
+
+
+def _normalise_text(value: str | None) -> str:
+    return " ".join(str(value or "").lower().strip().split())
+
+
+def _text_match(expected: str | None, actual: str | None) -> bool:
+    expected_text = _normalise_text(expected)
+    actual_text = _normalise_text(actual)
+    return bool(expected_text and actual_text and (expected_text in actual_text or actual_text in expected_text))
+
+
+def _distance_match(expected: str | None, actual: str | None) -> bool:
+    expected_text = _normalise_text(expected).replace(" ", "")
+    actual_text = _normalise_text(actual).replace(" ", "")
+    return bool(expected_text and actual_text and expected_text == actual_text)
+
+
+def _class_number(value: str | None) -> int | None:
+    if not value:
+        return None
+    match = re.search(r"\b([1-7])\b", str(value))
+    if not match:
+        return None
+    return int(match.group(1))
 
 
 def _fair_odds(probability: float) -> float | None:
