@@ -15,6 +15,7 @@ from ian_racing_model.ui import (
     default_date,
     model_upgrade_notes,
     outsider_last_time_dataframe,
+    picks_tracker_breakdown,
     picks_tracker_dataframe,
     picks_tracker_style,
     picks_tracker_summary,
@@ -46,6 +47,9 @@ else:
     winner_metric, ew_metric = st.columns(2)
     winner_metric.metric("Winner pick win rate", summary["winner_win_rate"])
     ew_metric.metric("Best EW place rate", summary["ew_place_rate"])
+    breakdown_df = picks_tracker_breakdown(picks_df)
+    if not breakdown_df.empty:
+        st.dataframe(breakdown_df, width="stretch", hide_index=True)
     st.dataframe(picks_tracker_style(picks_df), width="stretch", hide_index=True)
     st.caption("Green means won or placed, red means lost, and blue means just missed. Unsettled rows wait for verified results.")
 
