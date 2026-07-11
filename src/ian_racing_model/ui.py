@@ -128,12 +128,53 @@ def picks_tracker_summary(df: pd.DataFrame) -> dict[str, str]:
         }
 
     settled = df[~df["outcome"].eq("Awaiting result")]
-    winner_rows = settled[settled["pick_type"].eq("Winner pick")]
-    ew_rows = settled[settled["pick_type"].eq("Best EW pick")]
+    pick_type = settled["pick_type"].astype(str).str.strip()
+    winner_rows = settled[pick_type.eq("Winner pick")]
+    ew_rows = settled[pick_type.eq("Best EW pick")]
     return {
         "winner_win_rate": _ratio_text(winner_rows["outcome"].eq("WIN").sum(), len(winner_rows)),
         "ew_place_rate": _ratio_text(ew_rows["outcome"].isin(["WIN", "PLACED"]).sum(), len(ew_rows)),
     }
+
+
+def outsider_last_time_dataframe(scores: list[RunnerScore], min_decimal_odds: float = 15.0) -> pd.DataFrame:
+    rows = []
+    for item in scores:
+        runner = item.runner
+        signal = _last_time_outsider_signal(runner.source_payload, min_decimal_odds)
+        if signal is None:
+            continue
+        rows.append(
+            {
+                "course": runner.course,
+                "off_time": runner.off_time,
+                "race": runner.race_name,
+                "horse": runner.horse,
+                "last_result": signal["last_result"],
+                "last_odds": signal["last_odds"],
+                "signal": signal["signal"],
+                "today_odds": runner.current_odds or "Unavailable",
+                "score": item.total_score,
+                "recommendation": item.recommendation,
+            }
+        )
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).sort_values(
+        by=["score", "course", "off_time"],
+        ascending=[False, True, True],
+    )
+
+
+def model_upgrade_notes() -> list[str]:
+    return [
+        "Calibrate fair odds from actual results, not the current placeholder. Convert model scores into a probability curve by race type, field size and price band.",
+        "Separate win probability from place probability. EW picks should be judged on place value and place terms, not the same score used for win picks.",
+        "Use Pro horse history for course, distance, going and class performance. Replace neutral baselines with proven or unproven evidence.",
+        "Add market movement: compare opening odds, current odds and SP. Strong runners drifting late and weak runners shortening should be treated differently.",
+        "Use trainer and jockey analysis endpoints for recent strike rate, course record, A/E and 1 unit profit/loss, then score suitability rather than name presence.",
+        "Model outsider resilience: horses that recently won or placed at big odds should get a controlled positive for hidden ability, but only if today's setup is similar.",
+    ]
 
 
 def available_courses(scores: list[RunnerScore]) -> list[str]:
@@ -309,3 +350,66 @@ def _ratio_text(successes: int, total: int) -> str:
     if total == 0:
         return "No settled picks"
     return f"{(successes / total) * 100:.1f}% ({successes}/{total})"
+
+
+def _last_time_outsider_signal(payload: dict[str, Any], min_decimal_odds: float) -> dict[str, str] | None:
+    for candidate in _history_candidates(payload):
+        if not isinstance(candidate, dict):
+            continue
+        position = _parse_position(candidate.get("position") or candidate.get("pos"))
+        odds = _history_decimal_odds(candidate)
+        if position is None or odds is None:
+            continue
+        if position <= 3 and odds >= min_decimal_odds:
+            return {
+                "last_result": f"{position}",
+                "last_odds": _format_decimal_odds(odds),
+                "signal": "Won/placed at big odds last time",
+            }
+    return None
+
+
+def _history_candidates(payload: dict[str, Any]) -> list[Any]:
+    history_keys = (
+        "last_result",
+        "last_run_result",
+        "previous_result",
+        "previous_run",
+        "latest_result",
+        "history",
+        "results",
+        "past_results",
+        "horse_results",
+    )
+    candidates: list[Any] = []
+    for key in history_keys:
+        value = payload.get(key)
+        if isinstance(value, list):
+            candidates.extend(value[:3])
+        elif value:
+            candidates.append(value)
+    source_runner = payload.get("source_runner")
+    if isinstance(source_runner, dict):
+        for key in history_keys:
+            value = source_runner.get(key)
+            if isinstance(value, list):
+                candidates.extend(value[:3])
+            elif value:
+                candidates.append(value)
+    return candidates
+
+
+def _history_decimal_odds(payload: dict[str, Any]) -> float | None:
+    for key in ("sp_dec", "bsp", "decimal", "odds_decimal"):
+        odds = _decimal_odds(str(payload.get(key))) if payload.get(key) not in (None, "") else None
+        if odds is not None:
+            return odds
+    for key in ("sp", "odds", "starting_price"):
+        odds = _decimal_odds(str(payload.get(key))) if payload.get(key) not in (None, "") else None
+        if odds is not None:
+            return odds
+    return None
+
+
+def _format_decimal_odds(odds: float) -> str:
+    return f"{odds:.1f}"
