@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from dataclasses import replace
 from datetime import date
+import time
 from typing import Any
 
 from ian_racing_model.config import Settings, THE_RACING_API_CONFIG
@@ -126,16 +127,21 @@ def _attach_horse_history(
 ) -> list[Runner]:
     limit = int(THE_RACING_API_CONFIG.get("horse_history_limit", 6))
     max_runners = int(THE_RACING_API_CONFIG.get("horse_history_max_runners", 80))
+    delay_seconds = _history_delay(settings)
     merged: list[Runner] = []
     raw_audit: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
+    fetched_count = 0
 
     for index, runner in enumerate(runners):
         if runner.is_non_runner or index >= max_runners:
             merged.append(runner)
             continue
+        if delay_seconds and fetched_count:
+            time.sleep(delay_seconds)
         try:
             raw_history = provider.fetch_horse_history(runner, limit=limit)
+            fetched_count += 1
         except Exception as exc:
             errors.append({"horse": runner.horse, "error": type(exc).__name__, "message": str(exc)})
             merged.append(runner)
@@ -173,6 +179,15 @@ def _flatten_horse_history(raw: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(value, list):
             return [item for item in value if isinstance(item, dict)]
     return []
+
+
+def _history_delay(settings: Settings) -> float:
+    if settings.provider.lower() == "mock":
+        return 0.0
+    try:
+        return float(THE_RACING_API_CONFIG.get("horse_history_delay_seconds", 0.25))
+    except (TypeError, ValueError):
+        return 0.25
 
 
 def _flatten_results(raw: dict[str, Any]) -> list[dict[str, Any]]:
