@@ -1,7 +1,6 @@
-streamlit>=1.36,<1.50
-SQLAlchemy>=2.0,<2.1
-pandas>=2.2,<3
-pyarrow>=16,<19
-requests>=2.32,<3
-python-dotenv>=1.0,<2
-pytest>=8.2,<10
+streamlit==1.59.1
+SQLAlchemy==2.0.51
+pandas==3.0.3
+requests==2.34.2
+python-dotenv==1.2.2
+pytest==9.1.1
