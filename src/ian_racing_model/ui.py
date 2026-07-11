@@ -283,7 +283,7 @@ def _pick_row(item: RunnerScore, pick_type: str) -> dict[str, Any]:
         "confidence": item.confidence,
         "odds": runner.current_odds or "Unavailable",
         "recommendation": item.recommendation,
-        "result": position if position is not None else "Awaiting result",
+        "result": str(position) if position is not None else "Awaiting result",
         "outcome": outcome,
         "place_cutoff": place_cutoff,
         "warnings": "; ".join((item.red_flags or item.data_quality_warnings)[:3]),
