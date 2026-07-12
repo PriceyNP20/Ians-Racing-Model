@@ -11,7 +11,7 @@ import streamlit as st
 
 from ian_racing_model import ui as ui_helpers
 from ian_racing_model.config import Settings
-from ian_racing_model.edge import undervalued_edge_dataframe
+from ian_racing_model.edge_lab import enhanced_undervalued_edge_dataframe, negative_value_dataframe
 from ian_racing_model.services import get_refresh_statuses, get_scored_card_result
 from ian_racing_model.ui import (
     available_courses,
@@ -73,8 +73,15 @@ def _race_selection_screener_dataframe(scores):
 def _undervalued_edge_dataframe(scores, limit=12):
     helper = getattr(ui_helpers, "undervalued_edge_dataframe", None)
     if helper is not None:
-        return helper(scores, limit=limit)
-    return undervalued_edge_dataframe(scores, limit=limit)
+        base = helper(scores, limit=max(limit * 2, limit))
+        if not base.empty and "edge_score" in base.columns:
+            return enhanced_undervalued_edge_dataframe(scores, limit=limit)
+        return base
+    return enhanced_undervalued_edge_dataframe(scores, limit=limit)
+
+
+def _negative_value_dataframe(scores, limit=12):
+    return negative_value_dataframe(scores, limit=limit)
 
 
 def _refresh_health_dataframe(statuses):
@@ -220,6 +227,14 @@ if edge_df.empty:
 else:
     st.dataframe(edge_df, width="stretch", hide_index=True)
     st.caption("This pane looks for model-versus-market value backed by form, setup, trainer/jockey, speed or market-move evidence.")
+
+st.subheader("Negative Value Watchlist")
+negative_df = _negative_value_dataframe(display_scores, limit=12)
+if negative_df.empty:
+    st.info("No obvious overbet or weak-value runners are flagged from the current prices.")
+else:
+    st.dataframe(negative_df, width="stretch", hide_index=True)
+    st.caption("This flags runners that may look attractive on headline score but are short, drifting, low-confidence or poor value against our fair price.")
 
 st.subheader("Best Value")
 value_df = value_screener_dataframe(display_scores, limit=10)
