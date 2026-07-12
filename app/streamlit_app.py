@@ -12,12 +12,12 @@ import streamlit as st
 from ian_racing_model import ui as ui_helpers
 from ian_racing_model.config import Settings
 from ian_racing_model.edge_lab import enhanced_undervalued_edge_dataframe, negative_value_dataframe
+from ian_racing_model.outsider import outsider_last_time_dataframe
 from ian_racing_model.services import get_refresh_statuses, get_scored_card_result
 from ian_racing_model.ui import (
     available_courses,
     default_date,
     model_upgrade_notes,
-    outsider_last_time_dataframe,
     picks_tracker_breakdown,
     picks_tracker_dataframe,
     picks_tracker_style,
@@ -283,7 +283,7 @@ else:
 st.subheader("Outsider Last-Time Signals")
 outsider_df = outsider_last_time_dataframe(display_scores)
 if outsider_df.empty:
-    st.info("No verified last-time rank-outsider win/place signals are available in the imported fields.")
+    st.info("No last-time 30/1+ placed runners with a similar setup are available in the imported fields.")
 else:
     st.dataframe(outsider_df, width="stretch", hide_index=True)
 
