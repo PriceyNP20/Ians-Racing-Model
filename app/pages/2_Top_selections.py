@@ -19,6 +19,13 @@ from ian_racing_model.ui import (
 )
 
 
+def _model_signal_dataframe(scores, limit=20):
+    helper = getattr(ui_helpers, "model_signal_dataframe", None)
+    if helper is not None:
+        return helper(scores, limit=limit)
+    return scores_to_dataframe([])
+
+
 def _race_selection_screener_dataframe(scores):
     helper = getattr(ui_helpers, "race_selection_screener_dataframe", None)
     if helper is not None:
@@ -75,6 +82,13 @@ if value_df.empty:
     st.info("No positive model-versus-market value edges are available from the current odds.")
 else:
     st.dataframe(value_df, width="stretch", hide_index=True)
+
+st.subheader("Model Signals")
+signal_df = _model_signal_dataframe(scores, limit=20)
+if signal_df.empty:
+    st.info("No setup or market-move signals are available in the imported fields yet.")
+else:
+    st.dataframe(signal_df, width="stretch", hide_index=True)
 
 st.subheader("Top Model Scores")
 df = scores_to_dataframe(scores)
