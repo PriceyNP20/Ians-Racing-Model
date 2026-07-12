@@ -9,6 +9,8 @@ STYLE_WATCH = "background-color: #dbeafe; color: #1e3a8a;"
 STYLE_MUTED = "background-color: #f3f4f6; color: #374151;"
 STYLE_SIGNAL_COLUMNS = {
     "avoid_reason",
+    "calibration_adjustment",
+    "calibration_reason",
     "clv_signal",
     "danger_score",
     "edge_score",
