@@ -17,6 +17,9 @@ from ian_racing_model.ui import (
     picks_tracker_breakdown,
     picks_tracker_dataframe,
     picks_tracker_summary,
+    race_selection_screener_dataframe,
+    refresh_health_dataframe,
+    refresh_health_summary,
     screener_dataframe,
     value_screener_dataframe,
 )
@@ -175,6 +178,31 @@ def test_picks_tracker_separates_win_and_each_way_logic() -> None:
     assert picks.loc["Winner pick", "horse"] == "Win Profile"
     assert picks.loc["Best EW pick", "horse"] == "EW Profile"
     assert "selection_reason" in tracker.columns
+
+
+def test_race_selection_screener_shows_separate_winner_and_ew_rows() -> None:
+    provider = MockRacingDataProvider(SAMPLE_DATA_DIR / "mock_racecard.json")
+    runners, _ = provider.fetch_racecard(date(2026, 7, 11), None)
+    scores = IanFormulaV31().score_runners(runners)
+    screener = race_selection_screener_dataframe(scores)
+    assert {"Winner", "Best EW value"} <= set(screener["pick"])
+    assert "place_edge" in screener.columns
+
+
+def test_refresh_health_helpers_summarise_latest_api_status() -> None:
+    statuses = [
+        {
+            "source": "racecard",
+            "course": "All UK courses",
+            "status": "success",
+            "refreshed_at": "2026-07-12 08:30:00",
+            "message": "",
+        }
+    ]
+    summary = refresh_health_summary(statuses, "the_racing_api")
+    health = refresh_health_dataframe(statuses)
+    assert summary["state"] == "success"
+    assert health.iloc[0]["data"] == "Racecards"
 
 
 def test_picks_tracker_summary_counts_settled_results() -> None:
