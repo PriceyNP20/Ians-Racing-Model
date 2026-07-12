@@ -8,14 +8,50 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import streamlit as st
 
+from ian_racing_model import ui as ui_helpers
 from ian_racing_model.config import Settings
 from ian_racing_model.services import get_scored_card_result
 from ian_racing_model.ui import (
     default_date,
-    race_selection_screener_dataframe,
+    picks_tracker_dataframe,
     scores_to_dataframe,
     value_screener_dataframe,
 )
+
+
+def _race_selection_screener_dataframe(scores):
+    helper = getattr(ui_helpers, "race_selection_screener_dataframe", None)
+    if helper is not None:
+        return helper(scores)
+    picks = picks_tracker_dataframe(scores)
+    if picks.empty:
+        return picks
+    return picks.rename(
+        columns={
+            "pick_type": "pick",
+            "score": "model_score",
+            "win_value_edge": "win_edge",
+            "place_value_edge": "place_edge",
+            "selection_reason": "reason",
+        }
+    )[
+        [
+            "course",
+            "off_time",
+            "race",
+            "pick",
+            "horse",
+            "selection_score",
+            "model_score",
+            "confidence",
+            "odds",
+            "fair_win_odds",
+            "fair_place_odds",
+            "win_edge",
+            "place_edge",
+            "reason",
+        ]
+    ]
 
 
 st.title("Top Selections")
@@ -26,7 +62,7 @@ if result.warning:
 st.caption(f"Data source: {result.provider}")
 scores = result.scores
 st.subheader("Race-by-Race Picks")
-race_picks = race_selection_screener_dataframe(scores)
+race_picks = _race_selection_screener_dataframe(scores)
 if race_picks.empty:
     st.info("No race-level picks available.")
 else:
