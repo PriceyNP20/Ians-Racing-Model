@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import pandas as pd
@@ -24,6 +24,12 @@ RESULT_POSITION_KEYS = (
     "pos",
     "place",
 )
+
+REFRESH_SOURCE_LABELS = {
+    "racecard": "Racecards",
+    "results": "Results",
+    "horse_history": "Horse history",
+}
 
 
 def scores_to_dataframe(scores: list[RunnerScore]) -> pd.DataFrame:
@@ -135,6 +141,78 @@ def value_screener_dataframe(scores: list[RunnerScore], limit: int = 10) -> pd.D
     ).head(limit)
     df.insert(0, "rank", range(1, len(df) + 1))
     return df.drop(columns=["_edge_sort"])
+
+
+def race_selection_screener_dataframe(scores: list[RunnerScore]) -> pd.DataFrame:
+    rows = []
+    for (_, course, off_time, race), race_scores in _race_groups(scores).items():
+        sorted_scores = sorted(race_scores, key=_winner_selection_score, reverse=True)
+        winner_pick = sorted_scores[0]
+        ew_pick = _best_each_way_pick(race_scores, winner_pick)
+        rows.append(_selection_screener_row(winner_pick, "Winner", _winner_selection_score(winner_pick)))
+        if ew_pick is not None:
+            rows.append(_selection_screener_row(ew_pick, "Best EW value", _each_way_selection_score(ew_pick)))
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).sort_values(
+        by=["course", "off_time", "race", "pick"],
+        ascending=[True, True, True, False],
+    )
+
+
+def refresh_health_dataframe(statuses: list[dict]) -> pd.DataFrame:
+    if not statuses:
+        return pd.DataFrame()
+    rows = []
+    seen: set[tuple[str, str]] = set()
+    for item in statuses:
+        source = str(item.get("source") or "unknown")
+        course = str(item.get("course") or "All UK courses")
+        key = (source, course)
+        if key in seen:
+            continue
+        seen.add(key)
+        status = str(item.get("status") or "unknown")
+        rows.append(
+            {
+                "data": REFRESH_SOURCE_LABELS.get(source, source.replace("_", " ").title()),
+                "course": course,
+                "status": status.title(),
+                "last refreshed": _friendly_refresh_time(item.get("refreshed_at")),
+                "message": item.get("message") or "",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def refresh_health_summary(
+    statuses: list[dict], provider: str, warning: str | None = None
+) -> dict[str, str]:
+    if warning or provider == "mock":
+        return {
+            "label": "Using sample data",
+            "detail": "Live API data is not currently powering this view.",
+            "state": "warning",
+        }
+    if not statuses:
+        return {
+            "label": "Waiting for first refresh",
+            "detail": "Open a card to trigger the first API refresh record.",
+            "state": "info",
+        }
+    latest = statuses[0]
+    if str(latest.get("status")).lower() == "error":
+        return {
+            "label": "API needs attention",
+            "detail": latest.get("message") or "The latest refresh recorded an error.",
+            "state": "error",
+        }
+    return {
+        "label": "Live API active",
+        "detail": f"Latest {latest.get('source')} refresh: {_friendly_refresh_time(latest.get('refreshed_at'))}.",
+        "state": "success",
+    }
 
 
 def picks_tracker_dataframe(scores: list[RunnerScore]) -> pd.DataFrame:
@@ -511,26 +589,30 @@ def _winner_selection_score(item: RunnerScore) -> float:
 def _each_way_selection_score(item: RunnerScore) -> float:
     place_probability = item.place_probability or 0.0
     place_edge = item.place_value_edge if item.place_value_edge is not None else 0.0
+    win_edge = item.win_value_edge if item.win_value_edge is not None else 0.0
     odds = _decimal_odds(item.runner.current_odds)
     price_bonus = _each_way_price_bonus(odds)
     red_flag_drag = min(0.18, len(item.red_flags) * 0.03)
+    value_bonus = max(-0.08, min(0.26, place_edge)) * 165.0
+    win_bias_penalty = max(0.0, win_edge - place_edge) * 35.0
     return (
         place_probability * 100.0
-        + item.total_score * 0.28
-        + item.confidence * 16.0
-        + max(-0.05, min(0.22, place_edge)) * 140.0
+        + item.total_score * 0.2
+        + item.confidence * 18.0
+        + value_bonus
         + price_bonus
+        - win_bias_penalty
         - red_flag_drag * 100.0
     )
 
 
 def _is_each_way_candidate(item: RunnerScore) -> bool:
     odds = _decimal_odds(item.runner.current_odds)
-    if odds is not None and odds < 4.0:
+    if odds is not None and odds < 5.0:
         return False
-    if item.place_probability >= 0.35:
+    if item.place_probability >= 0.42 and (item.place_value_edge is None or item.place_value_edge >= -0.02):
         return True
-    if item.place_value_edge is not None and item.place_value_edge > 0:
+    if item.place_value_edge is not None and item.place_value_edge >= 0.03:
         return True
     return item.recommendation in {"EACH_WAY", "PLACE", "WATCH"}
 
@@ -561,6 +643,26 @@ def _selection_reason(item: RunnerScore, pick_type: str) -> str:
     if item.red_flags:
         parts.append(f"{len(item.red_flags)} red flag(s)")
     return "; ".join(parts)
+
+
+def _selection_screener_row(item: RunnerScore, pick: str, selection_score: float) -> dict[str, Any]:
+    runner = item.runner
+    return {
+        "course": runner.course,
+        "off_time": runner.off_time,
+        "race": runner.race_name,
+        "pick": pick,
+        "horse": runner.horse,
+        "selection_score": round(selection_score, 2),
+        "model_score": item.total_score,
+        "confidence": item.confidence,
+        "odds": runner.current_odds or "Unavailable",
+        "fair_win_odds": _format_decimal(item.fair_win_odds),
+        "fair_place_odds": _format_decimal(item.fair_place_odds),
+        "win_edge": _format_edge(item.win_value_edge),
+        "place_edge": _format_edge(item.place_value_edge),
+        "reason": _selection_reason(item, "Winner pick" if pick == "Winner" else "Best EW pick"),
+    }
 
 
 def _pick_outcome(pick_type: str, position: int | None, place_cutoff: int) -> str:
@@ -695,3 +797,14 @@ def _value_confidence_label(item: RunnerScore, best_edge: float) -> str:
     if item.confidence >= 0.52 and best_edge > 0:
         return "Speculative value"
     return "Weak data"
+
+
+def _friendly_refresh_time(value: Any) -> str:
+    if value in (None, ""):
+        return "Unknown"
+    text = str(value)
+    try:
+        refreshed_at = datetime.fromisoformat(text)
+    except ValueError:
+        return text
+    return refreshed_at.strftime("%Y-%m-%d %H:%M")
