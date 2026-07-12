@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import streamlit as st
 
 from ian_racing_model.config import Settings
-from ian_racing_model.edge_lab import edge_calibration_dataframe, edge_filter_recommendations
+from ian_racing_model.edge_lab import closing_value_dataframe, edge_calibration_dataframe, edge_filter_recommendations
 from ian_racing_model.services import get_scored_card_result
 from ian_racing_model import ui as ui_helpers
 from ian_racing_model.ui import (
@@ -74,6 +74,13 @@ else:
                 st.info(f"No settled calibration data yet for {label.lower()}.")
             else:
                 st.dataframe(calibration_df, width="stretch", hide_index=True)
+    st.subheader("Closing Price Value")
+    clv_df = closing_value_dataframe(scores)
+    if clv_df.empty:
+        st.info("No starting-price or closing-price sample is available yet from verified results.")
+    else:
+        st.caption("Positive closing value means the model found a bigger price than the market returned at the off.")
+        st.dataframe(clv_df, width="stretch", hide_index=True)
     st.subheader("Performance Lab")
     lab_dimensions = {
         "Race type": "race_type",
