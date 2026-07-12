@@ -9,9 +9,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import streamlit as st
 
+from ian_racing_model import ui as ui_helpers
 from ian_racing_model.config import Settings
-from ian_racing_model.services import get_scored_card_result
-from ian_racing_model.services import get_refresh_statuses
+from ian_racing_model.services import get_refresh_statuses, get_scored_card_result
 from ian_racing_model.ui import (
     available_courses,
     default_date,
@@ -21,13 +21,69 @@ from ian_racing_model.ui import (
     picks_tracker_dataframe,
     picks_tracker_style,
     picks_tracker_summary,
-    race_selection_screener_dataframe,
-    refresh_health_dataframe,
-    refresh_health_summary,
     scores_to_dataframe,
     screener_dataframe,
     value_screener_dataframe,
 )
+
+
+def _race_selection_screener_dataframe(scores):
+    helper = getattr(ui_helpers, "race_selection_screener_dataframe", None)
+    if helper is not None:
+        return helper(scores)
+    picks = picks_tracker_dataframe(scores)
+    if picks.empty:
+        return picks
+    return picks.rename(
+        columns={
+            "pick_type": "pick",
+            "score": "model_score",
+            "win_value_edge": "win_edge",
+            "place_value_edge": "place_edge",
+            "selection_reason": "reason",
+        }
+    )[
+        [
+            "course",
+            "off_time",
+            "race",
+            "pick",
+            "horse",
+            "selection_score",
+            "model_score",
+            "confidence",
+            "odds",
+            "fair_win_odds",
+            "fair_place_odds",
+            "win_edge",
+            "place_edge",
+            "reason",
+        ]
+    ]
+
+
+def _refresh_health_dataframe(statuses):
+    helper = getattr(ui_helpers, "refresh_health_dataframe", None)
+    if helper is not None:
+        return helper(statuses)
+    return scores_to_dataframe([])
+
+
+def _refresh_health_summary(statuses, provider, warning=None):
+    helper = getattr(ui_helpers, "refresh_health_summary", None)
+    if helper is not None:
+        return helper(statuses, provider, warning)
+    if warning or provider == "mock":
+        return {
+            "label": "Using sample data",
+            "detail": "Live API data is not currently powering this view.",
+            "state": "warning",
+        }
+    return {
+        "label": "Live API active",
+        "detail": "Refresh details are loading.",
+        "state": "success",
+    }
 
 
 st.set_page_config(page_title="Ian Racing Model", layout="wide")
@@ -84,7 +140,7 @@ if result.warning:
     st.warning(result.warning)
 st.caption(f"Data source: {result.provider}")
 refresh_statuses = get_refresh_statuses(settings, limit=12)
-health = refresh_health_summary(refresh_statuses, result.provider, result.warning)
+health = _refresh_health_summary(refresh_statuses, result.provider, result.warning)
 if health["state"] == "success":
     st.success(f"{health['label']}: {health['detail']}")
 elif health["state"] == "error":
@@ -94,7 +150,7 @@ elif health["state"] == "warning":
 else:
     st.info(f"{health['label']}: {health['detail']}")
 with st.expander("API refresh health", expanded=False):
-    health_df = refresh_health_dataframe(refresh_statuses)
+    health_df = _refresh_health_dataframe(refresh_statuses)
     if health_df.empty:
         st.info("No API refresh records are available yet.")
     else:
@@ -151,7 +207,7 @@ else:
     st.caption("Value edge compares model probability against available odds. It is for research only.")
 
 st.subheader("Race Picks")
-race_pick_df = race_selection_screener_dataframe(display_scores)
+race_pick_df = _race_selection_screener_dataframe(display_scores)
 if race_pick_df.empty:
     st.info("No race-level picks available.")
 else:
