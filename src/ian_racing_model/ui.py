@@ -245,6 +245,49 @@ def performance_by_odds_band(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values(["pick_type", "odds_band"])
 
 
+def performance_lab_dataframe(df: pd.DataFrame, dimension: str) -> pd.DataFrame:
+    if df.empty or dimension not in df.columns:
+        return pd.DataFrame()
+
+    settled = df[~df["outcome"].eq("Awaiting result")].copy()
+    if settled.empty:
+        return pd.DataFrame()
+
+    settled["_dimension"] = settled[dimension].fillna("Unknown").astype(str).str.strip()
+    settled.loc[settled["_dimension"].eq(""), "_dimension"] = "Unknown"
+    settled["_score"] = pd.to_numeric(settled.get("score"), errors="coerce")
+    settled["_selection_score"] = pd.to_numeric(settled.get("selection_score"), errors="coerce")
+    settled["_confidence"] = pd.to_numeric(settled.get("confidence"), errors="coerce")
+    settled["_decimal_odds"] = settled["odds"].map(_decimal_odds)
+
+    rows = []
+    for (pick_type, bucket), bucket_rows in settled.groupby(["pick_type", "_dimension"], dropna=False):
+        total = len(bucket_rows)
+        wins = int(bucket_rows["outcome"].eq("WIN").sum())
+        places = int(bucket_rows["outcome"].isin(["WIN", "PLACED"]).sum())
+        just_missed = int(bucket_rows["outcome"].isin(["JUST LOST", "JUST MISSED"]).sum())
+        rows.append(
+            {
+                "pick_type": pick_type,
+                dimension: bucket,
+                "settled": total,
+                "wins": wins,
+                "places": places,
+                "just_missed": just_missed,
+                "win_rate": _ratio_text(wins, total),
+                "place_rate": _ratio_text(places, total),
+                "avg_score": _mean_value(bucket_rows["_score"]),
+                "avg_selection_score": _mean_value(bucket_rows["_selection_score"]),
+                "avg_confidence": _mean_value(bucket_rows["_confidence"]),
+                "avg_odds": _mean_value(bucket_rows["_decimal_odds"]),
+            }
+        )
+    return pd.DataFrame(rows).sort_values(
+        by=["pick_type", "settled", "places", "wins"],
+        ascending=[True, False, False, False],
+    )
+
+
 def outsider_last_time_dataframe(scores: list[RunnerScore], min_decimal_odds: float = 15.0) -> pd.DataFrame:
     rows = []
     for item in scores:
@@ -358,6 +401,27 @@ def _odds_band(odds: float | None) -> str:
     return "20.0+"
 
 
+def _field_size_band(field_size: int | None) -> str:
+    if field_size is None:
+        return "Unknown"
+    if field_size < 5:
+        return "1 to 4"
+    if field_size < 8:
+        return "5 to 7"
+    if field_size < 12:
+        return "8 to 11"
+    if field_size < 16:
+        return "12 to 15"
+    return "16+"
+
+
+def _mean_value(series: pd.Series) -> float | None:
+    value = series.dropna().mean()
+    if pd.isna(value):
+        return None
+    return round(float(value), 2)
+
+
 def _screener_label(item: RunnerScore, odds: float | None, edge: float | None) -> str:
     has_positive_edge = edge is None or edge > 0
     if item.recommendation == "WIN" and has_positive_edge:
@@ -404,6 +468,12 @@ def _pick_row(item: RunnerScore, pick_type: str, selection_score: float) -> dict
         "course": runner.course,
         "off_time": runner.off_time,
         "race": runner.race_name,
+        "race_type": runner.race_type or "Unknown",
+        "race_class": runner.race_class or "Unknown",
+        "surface": runner.surface or "Unknown",
+        "going": runner.going or "Unknown",
+        "field_size": runner.field_size or 0,
+        "field_size_band": _field_size_band(runner.field_size),
         "pick_type": pick_type,
         "horse": runner.horse,
         "selection_score": round(selection_score, 2),
