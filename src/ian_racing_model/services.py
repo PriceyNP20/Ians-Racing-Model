@@ -81,7 +81,7 @@ def get_scored_card_result(
 
 
 if st is not None:
-    @st.cache_data(
+    @st.cache_resource(
         ttl=int(THE_RACING_API_CONFIG.get("racecard_refresh_minutes", 60)) * 60,
         show_spinner=False,
     )
