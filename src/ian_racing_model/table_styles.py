@@ -12,6 +12,7 @@ STYLE_SIGNAL_COLUMNS = {
     "clv_signal",
     "danger_score",
     "edge_score",
+    "edge_read",
     "edge_type",
     "outcome",
     "pick",
@@ -96,7 +97,7 @@ def _research_row_style(row: pd.Series) -> str:
     edge_type = str(row.get("edge_type", "")).lower()
     value_confidence = str(row.get("value_confidence", "")).lower()
 
-    if any(token in text for token in ("negative", "avoid", "danger", "lost value", "drifting", "weak value", "overbet")):
+    if any(token in text for token in ("negative", "avoid", "danger", "lost value", "drifting", "weak value", "overbet", "bad pocket")):
         return STYLE_NEGATIVE
     if (
         recommendation in {"WIN", "EACH_WAY", "PLACE"}
@@ -104,6 +105,7 @@ def _research_row_style(row: pd.Series) -> str:
         or any(token in screen for token in ("edge", "value", "win"))
         or any(token in signal for token in ("edge", "value", "supported", "placed"))
         or any(token in edge_type for token in ("edge", "value", "win"))
+        or any(token in text for token in ("positive pocket", "profitable-looking pocket"))
         or "strong value" in value_confidence
     ):
         return STYLE_POSITIVE
