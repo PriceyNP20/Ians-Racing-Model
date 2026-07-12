@@ -109,20 +109,19 @@ class IanFormulaV31:
             return FeatureValue(40, 0.35, DATA_MISSING, "Course unavailable.")
         history = _history_items(runner)
         if history:
-            course_runs = [
-                item for item in history if _text_match(runner.course, _history_text(item, "course"))
-            ]
+            course_runs = [item for item in history if _text_match(runner.course, _history_text(item, "course"))]
             if course_runs:
                 placed = sum(1 for item in course_runs if (_history_position(item) or 99) <= 3)
                 wins = sum(1 for item in course_runs if _history_position(item) == 1)
                 score = min(82, 58 + wins * 12 + placed * 6)
-                return FeatureValue(
-                    score,
-                    0.75,
-                    DATA_OK,
-                    "Course suitability scored from recent horse history.",
-                )
-            return FeatureValue(52, 0.65, DATA_PARTIAL, "No recent course evidence in horse history.")
+                return FeatureValue(score, 0.75, DATA_OK, "Course suitability scored from recent horse history.")
+            setup_runs = _setup_runs(runner, history)
+            if setup_runs:
+                placed = sum(1 for item in setup_runs if (_history_position(item) or 99) <= 3)
+                wins = sum(1 for item in setup_runs if _history_position(item) == 1)
+                score = min(76, 54 + wins * 10 + placed * 5)
+                return FeatureValue(score, 0.68, DATA_PARTIAL, "No course run found, but similar going/surface evidence exists.")
+            return FeatureValue(48, 0.68, DATA_PARTIAL, "No course or similar setup evidence in horse history.")
         return FeatureValue(58, 0.45, DATA_PARTIAL, "No course-history feed available; using neutral baseline.")
 
     def _distance_suitability(self, runner: Runner) -> FeatureValue:
@@ -130,21 +129,22 @@ class IanFormulaV31:
             return FeatureValue(40, 0.35, DATA_MISSING, "Distance unavailable.")
         history = _history_items(runner)
         if history:
-            distance_runs = [
-                item
-                for item in history
-                if _distance_match(runner.distance, _history_text(item, "distance", "dist"))
-            ]
+            target_trip = _distance_furlongs(runner.distance)
+            distance_runs = [item for item in history if _distance_match(runner.distance, _history_text(item, "distance", "dist"))]
             if distance_runs:
                 placed = sum(1 for item in distance_runs if (_history_position(item) or 99) <= 3)
                 wins = sum(1 for item in distance_runs if _history_position(item) == 1)
                 score = min(82, 58 + wins * 12 + placed * 6)
-                return FeatureValue(
-                    score,
-                    0.75,
-                    DATA_OK,
-                    "Trip suitability scored from recent horse history.",
-                )
+                return FeatureValue(score, 0.75, DATA_OK, "Trip suitability scored from recent horse history.")
+            if target_trip is not None:
+                nearby_runs = [
+                    item for item in history
+                    if _nearby_trip(target_trip, _distance_furlongs(_history_text(item, "distance", "dist")))
+                ]
+                if nearby_runs:
+                    placed = sum(1 for item in nearby_runs if (_history_position(item) or 99) <= 3)
+                    score = min(72, 52 + placed * 5)
+                    return FeatureValue(score, 0.68, DATA_PARTIAL, "No exact trip run found, but nearby-distance evidence exists.")
             return FeatureValue(50, 0.65, DATA_PARTIAL, "No proven recent run at this trip in horse history.")
         if any(token in runner.distance.lower() for token in ["3m", "2m7f", "2m6f"]):
             return FeatureValue(50, 0.5, DATA_PARTIAL, "Stamina trip noted without full trip history.")
@@ -163,8 +163,7 @@ class IanFormulaV31:
             class_runs = [(race_class, position) for race_class, position in class_runs if race_class]
             if class_runs:
                 same_or_stronger_places = sum(
-                    1
-                    for race_class, position in class_runs
+                    1 for race_class, position in class_runs
                     if race_class <= today_class and position is not None and position <= 3
                 )
                 last_class = class_runs[0][0]
@@ -178,9 +177,7 @@ class IanFormulaV31:
         return FeatureValue(62, 0.55, DATA_PARTIAL, "Class band appears ordinary from available label.")
 
     def _current_performance(self, runner: Runner) -> FeatureValue:
-        history_positions = [
-            position for position in (_history_position(item) for item in _history_items(runner)[:4]) if position
-        ]
+        history_positions = [position for position in (_history_position(item) for item in _history_items(runner)[:4]) if position]
         if history_positions:
             avg = sum(history_positions) / len(history_positions)
             in_frame = sum(1 for position in history_positions if position <= 3)
@@ -210,6 +207,13 @@ class IanFormulaV31:
         odds = _decimal_odds(runner.current_odds)
         if odds is None:
             return FeatureValue(42, 0.35, DATA_MISSING, "Current odds unavailable.")
+        movement = _market_movement(runner)
+        if movement is not None:
+            move, label = movement
+            if move <= -0.12 and odds >= 5:
+                return FeatureValue(76, 0.65, DATA_PARTIAL, f"Positive market support detected: {label}.")
+            if move >= 0.2:
+                return FeatureValue(44, 0.65, DATA_PARTIAL, f"Market drift raises caution: {label}.")
         if odds < 2.5:
             return FeatureValue(40, 0.55, DATA_PARTIAL, "Short price needs value proof not yet available.")
         if odds >= 8:
@@ -218,22 +222,25 @@ class IanFormulaV31:
 
     def _red_flags(self, runner: Runner) -> tuple[list[str], float]:
         flags: list[str] = []
-        if runner.distance and any(token in runner.distance.lower() for token in ["3m", "2m7f"]):
+        history = _history_items(runner)
+        if runner.distance and any(token in runner.distance.lower() for token in ["3m", "2m7f"]) and not _has_trip_evidence(runner, history):
             flags.append("wrong or unproven trip")
-        if runner.race_class and any(token in runner.race_class.lower() for token in ["class 1", "class 2"]):
+        if runner.race_class and any(token in runner.race_class.lower() for token in ["class 1", "class 2"]) and not _has_class_evidence(runner, history):
             flags.append("class rise")
         if runner.draw and runner.field_size and runner.draw > max(8, runner.field_size * 0.75):
             flags.append("poor draw")
         if runner.official_rating and runner.official_rating >= 96:
             flags.append("high handicap mark")
-        if runner.going and any(token in runner.going.lower() for token in ["heavy", "firm"]):
+        if runner.going and any(token in runner.going.lower() for token in ["heavy", "firm"]) and not _has_going_evidence(runner, history):
             flags.append("going concern")
         if runner.recent_form and "-" in runner.recent_form:
             flags.append("long absence")
         if runner.recent_form and runner.recent_form.upper().count("F") + runner.recent_form.upper().count("U") >= 2:
             flags.append("repeated jumping errors")
         odds = _decimal_odds(runner.current_odds)
-        if odds is not None and odds < 2.5:
+        movement = _market_movement(runner)
+        supported = movement is not None and movement[0] <= -0.12
+        if odds is not None and odds < 2.5 and not supported:
             flags.append("short price without value")
         return flags, min(20.0, len(flags) * 3.0)
 
@@ -261,25 +268,17 @@ class IanFormulaV31:
             if not race_scores:
                 continue
             mean_score = sum(item.total_score for item in race_scores) / len(race_scores)
-            win_strengths = [
-                exp((item.total_score - mean_score) / 14.0) * max(0.35, item.confidence)
-                for item in race_scores
-            ]
+            win_strengths = [exp((item.total_score - mean_score) / 14.0) * max(0.35, item.confidence) for item in race_scores]
             win_total = sum(win_strengths) or 1.0
             place_slots = _place_cutoff(race_scores[0].runner.field_size or len(race_scores))
             place_strengths = [
-                exp((item.total_score - mean_score) / 18.0)
-                * max(0.45, item.confidence)
-                * _place_reliability(item)
+                exp((item.total_score - mean_score) / 18.0) * max(0.45, item.confidence) * _place_reliability(item)
                 for item in race_scores
             ]
             place_total = sum(place_strengths) or 1.0
             for item, win_strength, place_strength in zip(race_scores, win_strengths, place_strengths):
                 win_probability = max(0.001, min(0.85, win_strength / win_total))
-                place_probability = max(
-                    win_probability,
-                    min(0.92, (place_strength / place_total) * place_slots),
-                )
+                place_probability = max(win_probability, min(0.92, (place_strength / place_total) * place_slots))
                 fair_win_odds = _fair_odds(win_probability)
                 fair_place_odds = _fair_odds(place_probability)
                 market_odds = _decimal_odds(item.runner.current_odds)
@@ -321,15 +320,7 @@ def _decimal_odds(value: str | None) -> float | None:
 
 def _history_items(runner: Runner) -> list[dict]:
     payload = runner.source_payload
-    keys = (
-        "horse_history",
-        "history",
-        "results",
-        "past_results",
-        "horse_results",
-        "last_result",
-        "previous_result",
-    )
+    keys = ("horse_history", "history", "results", "past_results", "horse_results", "last_result", "previous_result")
     items: list[dict] = []
     for key in keys:
         value = payload.get(key)
@@ -387,7 +378,64 @@ def _text_match(expected: str | None, actual: str | None) -> bool:
 def _distance_match(expected: str | None, actual: str | None) -> bool:
     expected_text = _normalise_text(expected).replace(" ", "")
     actual_text = _normalise_text(actual).replace(" ", "")
-    return bool(expected_text and actual_text and expected_text == actual_text)
+    if expected_text and actual_text and expected_text == actual_text:
+        return True
+    expected_trip = _distance_furlongs(expected)
+    actual_trip = _distance_furlongs(actual)
+    return bool(expected_trip is not None and actual_trip is not None and abs(expected_trip - actual_trip) <= 0.25)
+
+
+def _nearby_trip(expected_furlongs: float, actual_furlongs: float | None) -> bool:
+    return actual_furlongs is not None and abs(expected_furlongs - actual_furlongs) <= 1.0
+
+
+def _distance_furlongs(value: str | None) -> float | None:
+    if not value:
+        return None
+    text = _normalise_text(value).replace(" ", "")
+    miles = 0.0
+    furlongs = 0.0
+    yards = 0.0
+    mile_match = re.search(r"(\d+(?:\.\d+)?)m", text)
+    furlong_match = re.search(r"(\d+(?:\.\d+)?)f", text)
+    yard_match = re.search(r"(\d+(?:\.\d+)?)y", text)
+    if mile_match:
+        miles = float(mile_match.group(1))
+    if furlong_match:
+        furlongs = float(furlong_match.group(1))
+    if yard_match:
+        yards = float(yard_match.group(1))
+    if miles or furlongs or yards:
+        return miles * 8.0 + furlongs + yards / 220.0
+    return None
+
+
+def _setup_runs(runner: Runner, history: list[dict]) -> list[dict]:
+    return [
+        item for item in history
+        if _text_match(runner.going, _history_text(item, "going", "ground"))
+        or _text_match(runner.surface, _history_text(item, "surface"))
+    ]
+
+
+def _has_trip_evidence(runner: Runner, history: list[dict]) -> bool:
+    return any(_distance_match(runner.distance, _history_text(item, "distance", "dist")) and (_history_position(item) or 99) <= 3 for item in history)
+
+
+def _has_class_evidence(runner: Runner, history: list[dict]) -> bool:
+    today_class = _class_number(runner.race_class)
+    if today_class is None:
+        return False
+    return any(
+        (race_class := _class_number(_history_text(item, "race_class", "class"))) is not None
+        and race_class <= today_class
+        and (_history_position(item) or 99) <= 3
+        for item in history
+    )
+
+
+def _has_going_evidence(runner: Runner, history: list[dict]) -> bool:
+    return any(_text_match(runner.going, _history_text(item, "going", "ground")) and (_history_position(item) or 99) <= 3 for item in history)
 
 
 def _class_number(value: str | None) -> int | None:
@@ -409,6 +457,40 @@ def _value_edge(probability: float, market_odds: float | None) -> float | None:
     if market_odds is None or market_odds <= 1:
         return None
     return round(probability - (1.0 / market_odds), 4)
+
+
+def _market_movement(runner: Runner) -> tuple[float, str] | None:
+    current = _decimal_odds(runner.current_odds)
+    opening = _opening_odds(runner.source_payload)
+    if current is None or opening is None or opening <= 1:
+        return None
+    move = (current - opening) / opening
+    return move, f"{opening:.2f} to {current:.2f}"
+
+
+def _opening_odds(payload: dict) -> float | None:
+    for source in _payload_sources(payload):
+        for key in ("opening_odds", "open_odds", "early_odds", "first_odds", "opening_price", "open_price"):
+            odds = _decimal_odds(str(source.get(key))) if source.get(key) not in (None, "") else None
+            if odds is not None:
+                return odds
+        odds_rows = source.get("odds") or source.get("odds_history") or source.get("price_history")
+        if isinstance(odds_rows, list):
+            for row in odds_rows:
+                if not isinstance(row, dict):
+                    continue
+                odds = _decimal_odds(str(row.get("opening") or row.get("open") or row.get("first") or row.get("fractional_open") or row.get("decimal_open")))
+                if odds is not None:
+                    return odds
+    return None
+
+
+def _payload_sources(payload: dict) -> list[dict]:
+    sources = [payload]
+    source_runner = payload.get("source_runner")
+    if isinstance(source_runner, dict):
+        sources.append(source_runner)
+    return sources
 
 
 def _estimated_place_odds(win_odds: float | None) -> float | None:
