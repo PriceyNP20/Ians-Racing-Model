@@ -1,6 +1,8 @@
 streamlit==1.59.1
 SQLAlchemy==2.0.51
-pandas==3.0.3
+pandas==2.3.3
+numpy==2.3.5
+pyarrow==22.0.0
 requests==2.34.2
 python-dotenv==1.2.2
 pytest==9.1.1
