@@ -10,12 +10,12 @@ import streamlit as st
 
 from ian_racing_model.config import Settings
 from ian_racing_model.services import get_scored_card_result
+from ian_racing_model import ui as ui_helpers
 from ian_racing_model.ui import (
     available_courses,
     default_date,
     model_upgrade_notes,
     outsider_last_time_dataframe,
-    performance_lab_dataframe,
     performance_by_odds_band,
     picks_tracker_breakdown,
     picks_tracker_dataframe,
@@ -71,8 +71,12 @@ else:
         with tab:
             if dimension == "odds_band":
                 lab_df = odds_band_df
+            elif hasattr(ui_helpers, "performance_lab_dataframe"):
+                lab_df = ui_helpers.performance_lab_dataframe(picks_df, dimension)
             else:
-                lab_df = performance_lab_dataframe(picks_df, dimension)
+                lab_df = None
+                st.info("Performance Lab is still finishing its rebuild. Refresh again in a moment.")
+                continue
             if lab_df.empty:
                 st.info(f"No settled data yet for {label.lower()}.")
             else:
