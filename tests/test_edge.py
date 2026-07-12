@@ -6,6 +6,7 @@ import pandas as pd
 
 from ian_racing_model.domain import Runner, RunnerScore
 from ian_racing_model.edge_lab import (
+    closing_value_dataframe,
     edge_calibration_dataframe,
     edge_filter_recommendations,
     enhanced_undervalued_edge_dataframe,
@@ -111,3 +112,32 @@ def test_edge_filter_recommendations_flag_weak_big_outsiders() -> None:
     recommendations = edge_filter_recommendations(picks)
 
     assert any("20.0+ outsiders" in item for item in recommendations)
+
+
+def test_closing_value_dataframe_marks_runner_that_beats_the_close() -> None:
+    score = RunnerScore(
+        _runner(
+            horse="Early Value",
+            current_odds="10/1",
+            source_payload={"result_payload": {"result_runner": {"sp": "6/1"}}},
+        ),
+        67,
+        0.64,
+        "EACH_WAY",
+        "",
+        0.18,
+        0.42,
+        5.56,
+        2.38,
+        0.09,
+        0.12,
+        [],
+        [],
+        [],
+    )
+
+    closing_value = closing_value_dataframe([score])
+
+    assert closing_value.iloc[0]["horse"] == "Early Value"
+    assert closing_value.iloc[0]["clv_signal"] == "Beat close"
+    assert closing_value.iloc[0]["closing_value"] == "+57.1%"
