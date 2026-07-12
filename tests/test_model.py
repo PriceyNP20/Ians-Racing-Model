@@ -12,6 +12,7 @@ from ian_racing_model.providers.mock import MockRacingDataProvider
 from ian_racing_model.services import _attach_horse_history, _attach_results
 from ian_racing_model.ui import (
     outsider_last_time_dataframe,
+    performance_lab_dataframe,
     performance_by_odds_band,
     picks_tracker_breakdown,
     picks_tracker_dataframe,
@@ -245,6 +246,46 @@ def test_performance_by_odds_band_groups_settled_picks() -> None:
     by_band = performance_by_odds_band(tracker)
     assert not by_band.empty
     assert set(by_band["pick_type"]) == {"Winner pick", "Best EW pick"}
+
+
+def test_performance_lab_groups_settled_picks_by_race_context() -> None:
+    tracker = pd.DataFrame(
+        [
+            {
+                "pick_type": "Winner pick",
+                "outcome": "WIN",
+                "race_type": "Flat",
+                "score": 72,
+                "selection_score": 88,
+                "confidence": 0.72,
+                "odds": "4/1",
+            },
+            {
+                "pick_type": "Winner pick",
+                "outcome": "LOSE",
+                "race_type": "Flat",
+                "score": 61,
+                "selection_score": 73,
+                "confidence": 0.58,
+                "odds": "6/1",
+            },
+            {
+                "pick_type": "Best EW pick",
+                "outcome": "PLACED",
+                "race_type": "Jumps",
+                "score": 64,
+                "selection_score": 91,
+                "confidence": 0.66,
+                "odds": "10/1",
+            },
+        ]
+    )
+    lab = performance_lab_dataframe(tracker, "race_type")
+    winner_flat = lab[(lab["pick_type"].eq("Winner pick")) & (lab["race_type"].eq("Flat"))].iloc[0]
+    assert winner_flat["settled"] == 2
+    assert winner_flat["wins"] == 1
+    assert winner_flat["place_rate"] == "50.0% (1/2)"
+    assert "avg_selection_score" in lab.columns
 
 
 def test_outsider_last_time_signal_uses_verified_history_fields() -> None:
