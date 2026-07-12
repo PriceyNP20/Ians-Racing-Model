@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import streamlit as st
 
 from ian_racing_model.config import Settings
+from ian_racing_model.edge_lab import edge_calibration_dataframe, edge_filter_recommendations
 from ian_racing_model.services import get_scored_card_result
 from ian_racing_model import ui as ui_helpers
 from ian_racing_model.ui import (
@@ -56,6 +57,23 @@ else:
     if not odds_band_df.empty:
         st.subheader("Performance by Odds Band")
         st.dataframe(odds_band_df, width="stretch", hide_index=True)
+    st.subheader("Edge Calibration Lab")
+    for recommendation in edge_filter_recommendations(picks_df):
+        st.markdown(f"- {recommendation}")
+    calibration_dimensions = {
+        "Odds band": "odds_band",
+        "Score band": "score_band",
+        "Confidence band": "confidence_band",
+        "Pick type": "pick_type",
+    }
+    calibration_tabs = st.tabs(list(calibration_dimensions))
+    for tab, (label, dimension) in zip(calibration_tabs, calibration_dimensions.items()):
+        with tab:
+            calibration_df = edge_calibration_dataframe(picks_df, dimension)
+            if calibration_df.empty:
+                st.info(f"No settled calibration data yet for {label.lower()}.")
+            else:
+                st.dataframe(calibration_df, width="stretch", hide_index=True)
     st.subheader("Performance Lab")
     lab_dimensions = {
         "Race type": "race_type",
