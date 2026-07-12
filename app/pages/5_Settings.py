@@ -17,9 +17,6 @@ settings = Settings()
 st.write("Provider", settings.provider)
 st.write("Database", settings.database_url)
 
-st.subheader("Navigation")
-st.page_link("app/pages/6_Backtesting.py", label="Open Backtesting", icon="📊")
-
 st.subheader("Refresh policy")
 st.dataframe(
     [
