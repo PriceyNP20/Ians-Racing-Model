@@ -75,6 +75,9 @@ THE_RACING_API_CONFIG = {
     "horse_history_delay_seconds": get_float_setting(
         "RACING_API_HORSE_HISTORY_DELAY_SECONDS", 0.25
     ),
+    "racecard_refresh_minutes": get_int_setting("RACE_CARD_REFRESH_MINUTES", 60),
+    "results_refresh_minutes": get_int_setting("RESULTS_REFRESH_MINUTES", 15),
+    "horse_history_refresh_hours": get_int_setting("HORSE_HISTORY_REFRESH_HOURS", 24),
     "racecards_region_codes": get_setting("RACING_API_REGION_CODES", "gb"),
     "auth": {
         "username_env": "RACING_API_USERNAME",
