@@ -13,9 +13,11 @@ from ian_racing_model.model.scoring import IanFormulaV31
 from ian_racing_model.providers.factory import build_provider
 from ian_racing_model.providers.mock import MockRacingDataProvider
 from ian_racing_model.storage.db import (
+    list_model_snapshots,
     list_refresh_statuses,
     make_session_factory,
     record_refresh_status,
+    store_model_snapshots,
     store_raw_response,
 )
 
@@ -64,6 +66,12 @@ def get_refresh_statuses(settings: Settings, limit: int = 50) -> list[dict]:
     session_factory = make_session_factory(settings.database_url)
     with session_factory() as session:
         return list_refresh_statuses(session, limit=limit)
+
+
+def get_model_snapshots(settings: Settings, limit: int = 1000) -> list[dict]:
+    session_factory = make_session_factory(settings.database_url)
+    with session_factory() as session:
+        return list_model_snapshots(session, limit=limit)
 
 
 def get_scored_card_result(
@@ -118,14 +126,16 @@ def _load_scored_card_result(
     meeting_date: date, course: str | None, settings: Settings
 ) -> ScoredCardResult:
     provider = build_provider(settings)
+    scorer = IanFormulaV31()
     try:
         runners, raw = provider.fetch_racecard(meeting_date, course)
         _store_raw(settings, meeting_date, course, raw)
         _record_refresh(settings, meeting_date, course, "racecard", "success")
-        runners, results_imported = _attach_results(provider, settings, meeting_date, course, runners)
         runners = _attach_horse_history(provider, settings, meeting_date, course, runners)
+        _store_pre_result_snapshots(settings, settings.provider, scorer.score_runners(runners))
+        runners, results_imported = _attach_results(provider, settings, meeting_date, course, runners)
         return ScoredCardResult(
-            scores=IanFormulaV31().score_runners(runners),
+            scores=scorer.score_runners(runners),
             provider=settings.provider,
             results_imported=results_imported,
         )
@@ -143,14 +153,22 @@ def _load_scored_card_result(
         mock_provider = MockRacingDataProvider(settings.sample_racecard_path)
         runners, raw = mock_provider.fetch_racecard(meeting_date, course)
         _store_raw(settings, meeting_date, course, raw)
+        fallback_scores = scorer.score_runners(runners)
+        _store_pre_result_snapshots(settings, "mock", fallback_scores)
         return ScoredCardResult(
-            scores=IanFormulaV31().score_runners(runners),
+            scores=fallback_scores,
             provider="mock",
             warning=(
                 "Live Racing API data could not be loaded, so this view is using "
                 "sample data. Check Streamlit logs for the API status code/details."
             ),
         )
+
+
+def _store_pre_result_snapshots(settings: Settings, provider: str, scores: list[RunnerScore]) -> None:
+    session_factory = make_session_factory(settings.database_url)
+    with session_factory() as session:
+        store_model_snapshots(session, provider, scores)
 
 
 def get_scored_card(meeting_date: date, course: str | None, settings: Settings) -> list[RunnerScore]:
