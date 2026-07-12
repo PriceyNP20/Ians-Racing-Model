@@ -15,6 +15,7 @@ from ian_racing_model.ui import (
     default_date,
     model_upgrade_notes,
     outsider_last_time_dataframe,
+    performance_lab_dataframe,
     performance_by_odds_band,
     picks_tracker_breakdown,
     picks_tracker_dataframe,
@@ -55,6 +56,27 @@ else:
     if not odds_band_df.empty:
         st.subheader("Performance by Odds Band")
         st.dataframe(odds_band_df, width="stretch", hide_index=True)
+    st.subheader("Performance Lab")
+    lab_dimensions = {
+        "Race type": "race_type",
+        "Class": "race_class",
+        "Field size": "field_size_band",
+        "Going": "going",
+        "Surface": "surface",
+        "Odds band": "odds_band",
+        "Selection reason": "selection_reason",
+    }
+    lab_tabs = st.tabs(list(lab_dimensions))
+    for tab, (label, dimension) in zip(lab_tabs, lab_dimensions.items()):
+        with tab:
+            if dimension == "odds_band":
+                lab_df = odds_band_df
+            else:
+                lab_df = performance_lab_dataframe(picks_df, dimension)
+            if lab_df.empty:
+                st.info(f"No settled data yet for {label.lower()}.")
+            else:
+                st.dataframe(lab_df, width="stretch", hide_index=True)
     st.dataframe(picks_tracker_style(picks_df), width="stretch", hide_index=True)
     st.caption("Green means won or placed, red means lost, and blue means just missed. Unsettled rows wait for verified results.")
 
