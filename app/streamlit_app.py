@@ -11,6 +11,7 @@ import streamlit as st
 
 from ian_racing_model.config import Settings
 from ian_racing_model.services import get_scored_card_result
+from ian_racing_model.services import get_refresh_statuses
 from ian_racing_model.ui import (
     available_courses,
     default_date,
@@ -20,6 +21,9 @@ from ian_racing_model.ui import (
     picks_tracker_dataframe,
     picks_tracker_style,
     picks_tracker_summary,
+    race_selection_screener_dataframe,
+    refresh_health_dataframe,
+    refresh_health_summary,
     scores_to_dataframe,
     screener_dataframe,
     value_screener_dataframe,
@@ -79,6 +83,22 @@ result = get_scored_card_result(selected_date, None, settings)
 if result.warning:
     st.warning(result.warning)
 st.caption(f"Data source: {result.provider}")
+refresh_statuses = get_refresh_statuses(settings, limit=12)
+health = refresh_health_summary(refresh_statuses, result.provider, result.warning)
+if health["state"] == "success":
+    st.success(f"{health['label']}: {health['detail']}")
+elif health["state"] == "error":
+    st.error(f"{health['label']}: {health['detail']}")
+elif health["state"] == "warning":
+    st.warning(f"{health['label']}: {health['detail']}")
+else:
+    st.info(f"{health['label']}: {health['detail']}")
+with st.expander("API refresh health", expanded=False):
+    health_df = refresh_health_dataframe(refresh_statuses)
+    if health_df.empty:
+        st.info("No API refresh records are available yet.")
+    else:
+        st.dataframe(health_df, width="stretch", hide_index=True)
 if result.results_imported:
     st.success("Verified results have been matched to today's picks.")
 else:
@@ -129,6 +149,14 @@ if value_df.empty:
 else:
     st.dataframe(value_df, width="stretch", hide_index=True)
     st.caption("Value edge compares model probability against available odds. It is for research only.")
+
+st.subheader("Race Picks")
+race_pick_df = race_selection_screener_dataframe(display_scores)
+if race_pick_df.empty:
+    st.info("No race-level picks available.")
+else:
+    st.dataframe(race_pick_df, width="stretch", hide_index=True)
+    st.caption("Winner and EW/value picks use separate scoring logic, so the EW pick is biased toward place chance and price value.")
 
 race_options = ["All races"] + sorted(df["race"].dropna().unique().tolist()) if not df.empty else ["All races"]
 race = st.selectbox("Race", race_options)
