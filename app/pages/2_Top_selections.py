@@ -10,6 +10,7 @@ import streamlit as st
 
 from ian_racing_model import ui as ui_helpers
 from ian_racing_model.config import Settings
+from ian_racing_model.edge import undervalued_edge_dataframe
 from ian_racing_model.services import get_scored_card_result
 from ian_racing_model.ui import (
     default_date,
@@ -61,6 +62,13 @@ def _race_selection_screener_dataframe(scores):
     ]
 
 
+def _undervalued_edge_dataframe(scores, limit=12):
+    helper = getattr(ui_helpers, "undervalued_edge_dataframe", None)
+    if helper is not None:
+        return helper(scores, limit=limit)
+    return undervalued_edge_dataframe(scores, limit=limit)
+
+
 st.title("Top Selections")
 selected_date = st.date_input("Date", value=default_date())
 result = get_scored_card_result(selected_date, None, Settings())
@@ -75,6 +83,14 @@ if race_picks.empty:
 else:
     st.dataframe(race_picks, width="stretch", hide_index=True)
     st.caption("Winner and Best EW value are selected by separate scoring logic.")
+
+st.subheader("Undervalued Edge")
+edge_df = _undervalued_edge_dataframe(scores, limit=12)
+if edge_df.empty:
+    st.info("No clear undervalued edge is available from the current model, odds and evidence.")
+else:
+    st.dataframe(edge_df, width="stretch", hide_index=True)
+    st.caption("Shortlist of horses where the model price is bigger than the market expects and the case is supported by racing evidence.")
 
 st.subheader("Best Value")
 value_df = value_screener_dataframe(scores, limit=12)
