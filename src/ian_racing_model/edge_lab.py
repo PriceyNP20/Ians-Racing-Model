@@ -140,6 +140,39 @@ def edge_filter_recommendations(picks_df: pd.DataFrame) -> list[str]:
     return recs
 
 
+def closing_value_dataframe(scores: list[RunnerScore], limit: int = 50) -> pd.DataFrame:
+    rows = []
+    for item in scores:
+        runner = item.runner
+        if runner.is_non_runner:
+            continue
+        pick_odds = _decimal_odds(runner.current_odds)
+        closing_odds = _closing_odds(runner.source_payload)
+        if pick_odds is None or closing_odds is None or closing_odds <= 1:
+            continue
+        clv = (pick_odds / closing_odds) - 1.0
+        rows.append(
+            {
+                "course": runner.course,
+                "off_time": runner.off_time,
+                "race": runner.race_name,
+                "horse": runner.horse,
+                "pick_odds": round(pick_odds, 2),
+                "closing_odds": round(closing_odds, 2),
+                "closing_value": _format_percent(clv),
+                "clv_signal": _clv_signal(clv),
+                "score": item.total_score,
+                "confidence": item.confidence,
+                "recommendation": item.recommendation,
+                "_clv": clv,
+            }
+        )
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows).sort_values(["_clv", "score"], ascending=[False, False]).head(limit)
+    return df.drop(columns=["_clv"])
+
+
 def _longshot_drag(odds: float | None, evidence: str) -> float:
     if odds is None or odds < 20:
         return 0.0
@@ -198,6 +231,56 @@ def _opening_odds(payload: dict[str, Any]) -> float | None:
                     odds = _decimal_odds(str(row.get("opening") or row.get("open") or row.get("first") or ""))
                     if odds is not None:
                         return odds
+    return None
+
+
+def _closing_odds(payload: dict[str, Any]) -> float | None:
+    for source in _closing_sources(payload):
+        odds = _closing_odds_from_tree(source)
+        if odds is not None:
+            return odds
+    return None
+
+
+def _closing_sources(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for key in ("result_payload", "result_runner", "result"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            sources.append(value)
+            runner_value = value.get("result_runner") or value.get("runner")
+            if isinstance(runner_value, dict):
+                sources.append(runner_value)
+    sources.append(payload)
+    return sources
+
+
+def _closing_odds_from_tree(payload: dict[str, Any], depth: int = 0) -> float | None:
+    if depth > 3:
+        return None
+    direct_keys = (
+        "sp_dec",
+        "bsp",
+        "starting_price_decimal",
+        "starting_price_dec",
+        "sp_decimal",
+        "closing_odds",
+        "closing_price",
+        "closing_price_decimal",
+        "result_sp",
+        "sp",
+        "starting_price",
+        "starting_price_fractional",
+    )
+    for key in direct_keys:
+        odds = _decimal_odds(payload.get(key))
+        if odds is not None:
+            return odds
+    for value in payload.values():
+        if isinstance(value, dict):
+            odds = _closing_odds_from_tree(value, depth + 1)
+            if odds is not None:
+                return odds
     return None
 
 
@@ -288,3 +371,15 @@ def _format_edge(edge: float | None) -> str:
     if edge is None:
         return "Unavailable"
     return f"{edge * 100:+.1f} pts"
+
+
+def _format_percent(value: float) -> str:
+    return f"{value * 100:+.1f}%"
+
+
+def _clv_signal(clv: float) -> str:
+    if clv >= 0.03:
+        return "Beat close"
+    if clv <= -0.03:
+        return "Lost value"
+    return "Held price"
