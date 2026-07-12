@@ -205,20 +205,23 @@ def _pockets(df: pd.DataFrame, label: str) -> pd.DataFrame:
     return df[mask].copy()
 
 
-def _rule_suggestions(calibration_tables: dict[str, pd.DataFrame]) -> list[str]:
+def _rule_suggestions(calibration_tables: dict[str, pd.DataFrame], dimensions: dict[str, str]) -> list[str]:
     suggestions: list[str] = []
-    for dimension, table in calibration_tables.items():
+    for label, table in calibration_tables.items():
         if table.empty:
+            continue
+        dimension = dimensions[label]
+        if dimension not in table.columns:
             continue
         good = _pockets(table, "good")
         bad = _pockets(table, "bad")
         for _, row in good.head(3).iterrows():
             suggestions.append(
-                f"Lean into {row['pick_type']} when {dimension} is {row[dimension]}: {row['edge_read']} over {row['settled']} settled picks."
+                f"Lean into {row['pick_type']} when {label} is {row[dimension]}: {row['edge_read']} over {row['settled']} settled picks."
             )
         for _, row in bad.head(3).iterrows():
             suggestions.append(
-                f"Tighten {row['pick_type']} when {dimension} is {row[dimension]}: {row['edge_read']} over {row['settled']} settled picks."
+                f"Tighten {row['pick_type']} when {label} is {row[dimension]}: {row['edge_read']} over {row['settled']} settled picks."
             )
     if not suggestions:
         suggestions.append("Keep collecting settled results before changing rules aggressively. Current sample is still thin.")
@@ -290,7 +293,7 @@ else:
     calibration_tables = {label: _calibration_table(picks_df, dimension) for label, dimension in dimensions.items()}
 
     st.subheader("Suggested Rule Changes")
-    for suggestion in _rule_suggestions(calibration_tables):
+    for suggestion in _rule_suggestions(calibration_tables, dimensions):
         st.markdown(f"- {suggestion}")
 
     good_pockets = pd.concat([_pockets(table, "good").assign(dimension=label) for label, table in calibration_tables.items() if not table.empty], ignore_index=True)
