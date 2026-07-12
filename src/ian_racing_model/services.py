@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from dataclasses import replace
 from datetime import date
+from pathlib import Path
 import time
 from typing import Any
 
@@ -11,7 +12,17 @@ from ian_racing_model.domain import Runner, RunnerScore
 from ian_racing_model.model.scoring import IanFormulaV31
 from ian_racing_model.providers.factory import build_provider
 from ian_racing_model.providers.mock import MockRacingDataProvider
-from ian_racing_model.storage.db import make_session_factory, store_raw_response
+from ian_racing_model.storage.db import (
+    list_refresh_statuses,
+    make_session_factory,
+    record_refresh_status,
+    store_raw_response,
+)
+
+try:
+    import streamlit as st
+except Exception:
+    st = None
 
 
 @dataclass(frozen=True)
@@ -28,13 +39,89 @@ def _store_raw(settings: Settings, meeting_date: date, course: str | None, paylo
         store_raw_response(session, settings.provider, meeting_date.isoformat(), course, payload)
 
 
+def _record_refresh(
+    settings: Settings,
+    meeting_date: date,
+    course: str | None,
+    source: str,
+    status: str,
+    message: str | None = None,
+) -> None:
+    session_factory = make_session_factory(settings.database_url)
+    with session_factory() as session:
+        record_refresh_status(
+            session,
+            settings.provider,
+            meeting_date.isoformat(),
+            course,
+            source,
+            status,
+            message,
+        )
+
+
+def get_refresh_statuses(settings: Settings, limit: int = 50) -> list[dict]:
+    session_factory = make_session_factory(settings.database_url)
+    with session_factory() as session:
+        return list_refresh_statuses(session, limit=limit)
+
+
 def get_scored_card_result(
+    meeting_date: date, course: str | None, settings: Settings
+) -> ScoredCardResult:
+    if st is not None:
+        return _cached_scored_card_result(
+            meeting_date.isoformat(),
+            course,
+            settings.provider,
+            settings.database_url,
+            str(settings.sample_racecard_path),
+        )
+    return _load_scored_card_result(meeting_date, course, settings)
+
+
+if st is not None:
+    @st.cache_data(
+        ttl=int(THE_RACING_API_CONFIG.get("racecard_refresh_minutes", 60)) * 60,
+        show_spinner=False,
+    )
+    def _cached_scored_card_result(
+        meeting_date_iso: str,
+        course: str | None,
+        provider: str,
+        database_url: str,
+        sample_racecard_path: str,
+    ) -> ScoredCardResult:
+        settings = Settings(
+            provider=provider,
+            database_url=database_url,
+            sample_racecard_path=Path(sample_racecard_path),
+        )
+        return _load_scored_card_result(date.fromisoformat(meeting_date_iso), course, settings)
+else:
+    def _cached_scored_card_result(
+        meeting_date_iso: str,
+        course: str | None,
+        provider: str,
+        database_url: str,
+        sample_racecard_path: str,
+    ) -> ScoredCardResult:
+        settings = Settings(
+            provider=provider,
+            database_url=database_url,
+            sample_racecard_path=Path(sample_racecard_path),
+        )
+        return _load_scored_card_result(date.fromisoformat(meeting_date_iso), course, settings)
+
+
+def _load_scored_card_result(
     meeting_date: date, course: str | None, settings: Settings
 ) -> ScoredCardResult:
     provider = build_provider(settings)
     try:
         runners, raw = provider.fetch_racecard(meeting_date, course)
         _store_raw(settings, meeting_date, course, raw)
+        _record_refresh(settings, meeting_date, course, "racecard", "success")
         runners, results_imported = _attach_results(provider, settings, meeting_date, course, runners)
         runners = _attach_horse_history(provider, settings, meeting_date, course, runners)
         return ScoredCardResult(
@@ -49,6 +136,7 @@ def get_scored_card_result(
             "fallback": "mock",
         }
         _store_raw(settings, meeting_date, course, error_payload)
+        _record_refresh(settings, meeting_date, course, "racecard", "error", str(exc))
         if settings.provider.lower() == "mock":
             raise
 
@@ -89,13 +177,16 @@ def _attach_results(
                 "source": "results",
             },
         )
+        _record_refresh(settings, meeting_date, course, "results", "error", str(exc))
         return runners, False
 
     result_items = _flatten_results(raw_results)
     if not result_items:
+        _record_refresh(settings, meeting_date, course, "results", "empty")
         return runners, False
 
     _store_raw(settings, meeting_date, course, {"results": raw_results})
+    _record_refresh(settings, meeting_date, course, "results", "success")
     lookup = {_result_key(item): item for item in result_items}
     merged: list[Runner] = []
     matched = False
@@ -166,8 +257,26 @@ def _attach_horse_history(
 
     if raw_audit:
         _store_raw(settings, meeting_date, course, {"horse_history": raw_audit})
+        _record_refresh(
+            settings,
+            meeting_date,
+            course,
+            "horse_history",
+            "success",
+            f"{len(raw_audit)} runner histories refreshed",
+        )
     if errors:
         _store_raw(settings, meeting_date, course, {"source": "horse_history", "errors": errors})
+        _record_refresh(
+            settings,
+            meeting_date,
+            course,
+            "horse_history",
+            "partial",
+            f"{len(errors)} runner history errors",
+        )
+    if not raw_audit and not errors:
+        _record_refresh(settings, meeting_date, course, "horse_history", "empty")
     return merged
 
 
