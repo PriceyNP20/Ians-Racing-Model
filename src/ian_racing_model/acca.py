@@ -18,6 +18,8 @@ def ew_accumulator_dataframe(scores: list[RunnerScore], limit: int = 6) -> pd.Da
         runner = item.runner
         if runner.is_non_runner:
             continue
+        if runner.field_size is not None and runner.field_size < 8:
+            continue
         odds = _decimal_odds(runner.current_odds)
         if odds is not None and odds < 2.5:
             continue
@@ -46,6 +48,7 @@ def ew_accumulator_dataframe(scores: list[RunnerScore], limit: int = 6) -> pd.Da
                 "course": runner.course,
                 "off_time": runner.off_time,
                 "race": runner.race_name,
+                "field_size": runner.field_size or 0,
                 "odds": runner.current_odds or "Unavailable",
                 "place_probability": _format_percent(place_probability),
                 "place_edge": _format_edge(item.place_value_edge),
@@ -58,16 +61,28 @@ def ew_accumulator_dataframe(scores: list[RunnerScore], limit: int = 6) -> pd.Da
                 "_score": accumulator_score,
                 "_place_probability": place_probability,
                 "_confidence": item.confidence,
+                "_race_key": (runner.meeting_date, runner.course, runner.off_time, runner.race_name),
             }
         )
     if not rows:
         return pd.DataFrame()
-    df = pd.DataFrame(rows).sort_values(
+    ranked = pd.DataFrame(rows).sort_values(
         ["_score", "_place_probability", "_confidence"],
         ascending=[False, False, False],
-    ).head(limit)
+    )
+    selected = []
+    used_races = set()
+    for row in ranked.to_dict("records"):
+        race_key = row["_race_key"]
+        if race_key in used_races:
+            continue
+        selected.append(row)
+        used_races.add(race_key)
+        if len(selected) == limit:
+            break
+    df = pd.DataFrame(selected)
     df["acca_rank"] = range(1, len(df) + 1)
-    return df.drop(columns=["_score", "_place_probability", "_confidence"])
+    return df.drop(columns=["_score", "_place_probability", "_confidence", "_race_key"])
 
 
 def _accumulator_price_drag(odds: float | None) -> float:
