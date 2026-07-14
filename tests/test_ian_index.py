@@ -138,6 +138,45 @@ def test_ian_index_missing_data_lowers_confidence() -> None:
     assert confidence["Rich Data"] > confidence["Thin Data"]
 
 
+def test_ian_index_labels_imported_proxy_and_missing_evidence() -> None:
+    rich = _score(
+        _runner(
+            horse="Rich Data",
+            source_payload={
+                "timeform_rating": 104,
+                "beyer": 86,
+                "rpr": 103,
+                "pace_rating": 74,
+                "trainer_ae": 1.12,
+                "jockey_ae": 1.05,
+                "course_place_pct": 28,
+            },
+        )
+    )
+    thin = _score(
+        _runner(
+            horse="Thin Data",
+            official_rating=None,
+            trainer=None,
+            jockey=None,
+            current_odds=None,
+            recent_form=None,
+            source_payload={},
+        ),
+        place_value_edge=None,
+        place_probability=None,
+    )
+
+    trial = ian_index_place_dataframe([rich, thin])
+    rich_row = trial[trial["horse"].eq("Rich Data")].iloc[0]
+    thin_row = trial[trial["horse"].eq("Thin Data")].iloc[0]
+
+    assert rich_row["imported_signals"] >= 6
+    assert rich_row["speed_evidence"].startswith("Imported:")
+    assert thin_row["missing_signals"] >= 3
+    assert "Proxy" in thin_row["evidence_summary"] or "Missing" in thin_row["evidence_summary"]
+
+
 def test_ian_index_acca_takes_one_runner_per_race_and_requires_eight_runners() -> None:
     same_race_strong = _score(
         _runner(horse="Same Race Strong", off_time="15:00", race_name="Shared Race", field_size=10),
