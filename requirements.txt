@@ -4,5 +4,9 @@ pandas==2.3.3
 numpy==2.3.5
 pyarrow==22.0.0
 requests==2.34.2
+httpx==0.28.1
+pydantic==2.12.5
+scikit-learn==1.8.0
+alembic==1.17.2
 python-dotenv==1.2.2
 pytest==9.1.1
