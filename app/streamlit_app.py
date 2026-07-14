@@ -14,13 +14,13 @@ from ian_racing_model.config import Settings
 from ian_racing_model.edge_lab import enhanced_undervalued_edge_dataframe, negative_value_dataframe
 from ian_racing_model.outsider import outsider_last_time_dataframe
 from ian_racing_model.services import get_refresh_statuses, get_scored_card_result
+from ian_racing_model.table_styles import picks_tracker_style, research_table_style
 from ian_racing_model.ui import (
     available_courses,
     default_date,
     model_upgrade_notes,
     picks_tracker_breakdown,
     picks_tracker_dataframe,
-    picks_tracker_style,
     picks_tracker_summary,
     scores_to_dataframe,
     screener_dataframe,
@@ -217,7 +217,7 @@ else:
                 unsafe_allow_html=True,
             )
     with st.expander("Open full screener list", expanded=True):
-        st.dataframe(screener_df, width="stretch", hide_index=True)
+        st.dataframe(research_table_style(screener_df), width="stretch", hide_index=True)
     st.caption("Screener signals are for research only. They do not place or automate bets.")
 
 st.subheader("Undervalued Edge")
@@ -225,7 +225,7 @@ edge_df = _undervalued_edge_dataframe(display_scores, limit=12)
 if edge_df.empty:
     st.info("No clear undervalued edge is available from the current model, odds and evidence.")
 else:
-    st.dataframe(edge_df, width="stretch", hide_index=True)
+    st.dataframe(research_table_style(edge_df), width="stretch", hide_index=True)
     st.caption("This pane looks for model-versus-market value backed by form, setup, trainer/jockey, speed or market-move evidence.")
 
 st.subheader("Negative Value Watchlist")
@@ -233,7 +233,7 @@ negative_df = _negative_value_dataframe(display_scores, limit=12)
 if negative_df.empty:
     st.info("No obvious overbet or weak-value runners are flagged from the current prices.")
 else:
-    st.dataframe(negative_df, width="stretch", hide_index=True)
+    st.dataframe(research_table_style(negative_df), width="stretch", hide_index=True)
     st.caption("This flags runners that may look attractive on headline score but are short, drifting, low-confidence or poor value against our fair price.")
 
 st.subheader("Best Value")
@@ -241,7 +241,7 @@ value_df = value_screener_dataframe(display_scores, limit=10)
 if value_df.empty:
     st.info("No positive model-versus-market value edges are available from the current odds.")
 else:
-    st.dataframe(value_df, width="stretch", hide_index=True)
+    st.dataframe(research_table_style(value_df), width="stretch", hide_index=True)
     st.caption("Value edge compares model probability against available odds. It is for research only.")
 
 st.subheader("Model Signals")
@@ -249,14 +249,14 @@ signal_df = _model_signal_dataframe(display_scores, limit=20)
 if signal_df.empty:
     st.info("No setup or market-move signals are available in the imported fields yet.")
 else:
-    st.dataframe(signal_df, width="stretch", hide_index=True)
+    st.dataframe(research_table_style(signal_df), width="stretch", hide_index=True)
 
 st.subheader("Race Picks")
 race_pick_df = _race_selection_screener_dataframe(display_scores)
 if race_pick_df.empty:
     st.info("No race-level picks available.")
 else:
-    st.dataframe(race_pick_df, width="stretch", hide_index=True)
+    st.dataframe(research_table_style(race_pick_df), width="stretch", hide_index=True)
     st.caption("Winner and EW/value picks use separate scoring logic, so the EW pick is biased toward place chance and price value.")
 
 race_options = ["All races"] + sorted(df["race"].dropna().unique().tolist()) if not df.empty else ["All races"]
@@ -278,14 +278,14 @@ else:
     if not breakdown_df.empty:
         st.dataframe(breakdown_df, width="stretch", hide_index=True)
     st.dataframe(picks_tracker_style(picks_df), width="stretch", hide_index=True)
-    st.caption("Green means won or placed, red means lost, and blue means just missed. Unsettled rows wait for verified results.")
+    st.caption("Green highlights model selections that won or placed. All other rows remain white.")
 
 st.subheader("Outsider Last-Time Signals")
 outsider_df = outsider_last_time_dataframe(display_scores)
 if outsider_df.empty:
-    st.info("No last-time 30/1+ placed runners with a similar setup are available in the imported fields.")
+    st.info("No verified last-time rank-outsider win/place signals are available in the imported fields.")
 else:
-    st.dataframe(outsider_df, width="stretch", hide_index=True)
+    st.dataframe(research_table_style(outsider_df), width="stretch", hide_index=True)
 
 with st.expander("Model Edge Upgrade Notes", expanded=False):
     for note in model_upgrade_notes():
