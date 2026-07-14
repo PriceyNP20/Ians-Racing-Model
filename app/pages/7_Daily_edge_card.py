@@ -74,12 +74,7 @@ def _edge_row(edge_df: pd.DataFrame) -> dict | None:
 
 
 def _card(label: str, row: dict | None, tone: str) -> None:
-    colours = {
-        "positive": ("#fef3c7", "#78350f", "#f59e0b"),
-        "watch": ("#dbeafe", "#1e3a8a", "#3b82f6"),
-        "negative": ("#fee2e2", "#7f1d1d", "#ef4444"),
-    }
-    background, text_colour, border = colours[tone]
+    background, text_colour, border = ("#ffffff", "#374151", "#d8dee8")
     if row is None:
         st.markdown(
             f"""
@@ -127,8 +122,8 @@ def _acca_card(row: dict) -> None:
     warnings = escape(str(row.get("warnings", "")))
     st.markdown(
         f"""
-        <div style="border:1px solid #f59e0b;border-radius:8px;padding:14px;min-height:210px;background:#fef3c7;">
-          <div style="font-size:13px;font-weight:750;text-transform:uppercase;color:#78350f;">EW Acca #{rank}</div>
+        <div style="border:1px solid #d8dee8;border-radius:8px;padding:14px;min-height:210px;background:#ffffff;">
+          <div style="font-size:13px;font-weight:750;text-transform:uppercase;color:#374151;">EW Acca #{rank}</div>
           <div style="font-size:23px;font-weight:800;margin-top:8px;color:#202633;">{horse}</div>
           <div style="font-size:14px;line-height:1.35;color:#374151;">{off_time} - {course}</div>
           <div style="font-size:13px;line-height:1.35;color:#4b5563;">{race}</div>
