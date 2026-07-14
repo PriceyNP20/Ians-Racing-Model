@@ -89,6 +89,8 @@ def test_ew_accumulator_uses_top_six_place_profiles() -> None:
     for index in range(8):
         runner = _runner(
             horse=f"Place Profile {index}",
+            off_time=f"14:{index:02d}",
+            race_name=f"Race {index}",
             current_odds="8/1",
             recent_form="123",
             source_payload={"speed_figure": 82 + index, "trainer_ae": 1.1},
@@ -117,6 +119,83 @@ def test_ew_accumulator_uses_top_six_place_profiles() -> None:
     assert len(acca) == 6
     assert acca.iloc[0]["horse"] == "Place Profile 7"
     assert acca["acca_rank"].tolist() == [1, 2, 3, 4, 5, 6]
+
+
+def test_ew_accumulator_takes_one_horse_per_race_and_requires_eight_runners() -> None:
+    strong_same_race = RunnerScore(
+        _runner(
+            horse="Same Race Strong",
+            off_time="15:00",
+            race_name="Shared Race",
+            field_size=10,
+            current_odds="8/1",
+            source_payload={"speed_figure": 92, "trainer_ae": 1.2},
+        ),
+        70,
+        0.7,
+        "EACH_WAY",
+        "",
+        0.1,
+        0.52,
+        10.0,
+        2.1,
+        0.01,
+        0.1,
+        [],
+        [],
+        [],
+    )
+    weaker_same_race = RunnerScore(
+        _runner(
+            horse="Same Race Weaker",
+            off_time="15:00",
+            race_name="Shared Race",
+            field_size=10,
+            current_odds="8/1",
+            source_payload={"speed_figure": 88, "trainer_ae": 1.1},
+        ),
+        66,
+        0.66,
+        "EACH_WAY",
+        "",
+        0.1,
+        0.48,
+        10.0,
+        2.1,
+        0.01,
+        0.08,
+        [],
+        [],
+        [],
+    )
+    small_field = RunnerScore(
+        _runner(
+            horse="Small Field",
+            off_time="16:00",
+            race_name="Tiny Field",
+            field_size=7,
+            current_odds="8/1",
+            source_payload={"speed_figure": 94, "trainer_ae": 1.2},
+        ),
+        72,
+        0.72,
+        "EACH_WAY",
+        "",
+        0.1,
+        0.54,
+        10.0,
+        2.1,
+        0.01,
+        0.12,
+        [],
+        [],
+        [],
+    )
+
+    acca = ew_accumulator_dataframe([strong_same_race, weaker_same_race, small_field], limit=6)
+
+    assert acca["horse"].tolist() == ["Same Race Strong"]
+    assert acca["field_size"].min() >= 8
 
 
 def test_edge_calibration_groups_settled_picks() -> None:
