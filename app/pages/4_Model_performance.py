@@ -11,6 +11,7 @@ import pandas as pd
 import streamlit as st
 
 from ian_racing_model.config import Settings
+from ian_racing_model.edge_quality import probability_calibration_dataframe
 from ian_racing_model.edge_lab import closing_value_dataframe, edge_calibration_dataframe, edge_filter_recommendations
 from ian_racing_model.outsider import outsider_last_time_dataframe
 from ian_racing_model.services import get_model_snapshots, get_scored_card_result
@@ -83,6 +84,11 @@ else:
     top_cols[4].metric("Just missed", f"{int(all_settled['outcome'].isin(['JUST LOST', 'JUST MISSED']).sum())}")
     if not all_breakdown.empty:
         st.dataframe(all_breakdown, width="stretch", hide_index=True)
+    all_probability_calibration = probability_calibration_dataframe(all_picks_df)
+    if not all_probability_calibration.empty:
+        st.subheader("All-Time Probability Calibration")
+        st.caption("Compares the model's stated win/place chance with what actually happened in settled picks.")
+        st.dataframe(research_table_style(all_probability_calibration), width="stretch", hide_index=True)
 
     daily_rows = []
     for day, day_rows in all_picks_df.groupby("meeting_date", sort=True):
@@ -116,6 +122,10 @@ else:
     breakdown_df = picks_tracker_breakdown(picks_df)
     if not breakdown_df.empty:
         st.dataframe(breakdown_df, width="stretch", hide_index=True)
+    probability_df = probability_calibration_dataframe(picks_df)
+    if not probability_df.empty:
+        st.subheader("Model Probability Calibration")
+        st.dataframe(research_table_style(probability_df), width="stretch", hide_index=True)
     odds_band_df = performance_by_odds_band(picks_df)
     if not odds_band_df.empty:
         st.subheader("Performance by Odds Band")
@@ -143,6 +153,12 @@ else:
         st.info("No starting-price or closing-price sample is available yet from verified results.")
     else:
         st.caption("Positive closing value means the model found a bigger price than the market returned at the off.")
+        beat_close = int(clv_df["clv_signal"].astype(str).eq("Beat close").sum())
+        lost_value = int(clv_df["clv_signal"].astype(str).eq("Lost value").sum())
+        clv_cols = st.columns(3)
+        clv_cols[0].metric("Tracked prices", f"{len(clv_df)}")
+        clv_cols[1].metric("Beat close", f"{beat_close}")
+        clv_cols[2].metric("Lost value", f"{lost_value}")
         st.dataframe(research_table_style(clv_df), width="stretch", hide_index=True)
     st.subheader("Performance Lab")
     lab_dimensions = {
