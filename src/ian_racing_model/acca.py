@@ -61,7 +61,7 @@ def ew_accumulator_dataframe(scores: list[RunnerScore], limit: int = 6) -> pd.Da
                 "_score": accumulator_score,
                 "_place_probability": place_probability,
                 "_confidence": item.confidence,
-                "_race_key": (runner.meeting_date, runner.course, runner.off_time, runner.race_name),
+                "_race_key": _race_key(item),
             }
         )
     if not rows:
@@ -146,3 +146,28 @@ def _flatten(value) -> list:
             rows.extend(_flatten(item))
         return rows
     return [value]
+
+
+def _race_key(item: RunnerScore) -> tuple[str, str, str, str]:
+    runner = item.runner
+    return (
+        str(runner.meeting_date),
+        _normalise_identity(runner.course),
+        _normalise_off_time(runner.off_time),
+        _normalise_identity(runner.race_name),
+    )
+
+
+def _normalise_identity(value: str | None) -> str:
+    return " ".join(str(value or "").lower().replace("'", "").split())
+
+
+def _normalise_off_time(value: str | None) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    text = text.replace(".", ":")
+    parts = text.split(":")
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+        return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+    return text
