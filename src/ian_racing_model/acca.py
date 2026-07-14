@@ -158,7 +158,8 @@ def _race_key(item: RunnerScore) -> tuple[str, str, str]:
 
 
 def _normalise_identity(value: str | None) -> str:
-    return " ".join(str(value or "").lower().replace("'", "").split())
+    text = str(value or "").replace("\xa0", " ")
+    return " ".join(text.lower().replace("'", "").split())
 
 
 def _normalise_off_time(value: str | None) -> str:
@@ -168,5 +169,9 @@ def _normalise_off_time(value: str | None) -> str:
     text = text.replace(".", ":")
     parts = text.split(":")
     if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
-        return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+        hour = int(parts[0])
+        minute = int(parts[1])
+        if hour > 12:
+            hour -= 12
+        return f"{hour:02d}:{minute:02d}"
     return text
