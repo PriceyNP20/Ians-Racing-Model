@@ -77,6 +77,18 @@ def ian_index_place_dataframe(scores: list[RunnerScore], limit: int | None = Non
                 "trainer_intent": round(components["trainer_intent"].score, 1),
                 "jockey": round(components["jockey"].score, 1),
                 "course_going": round(components["course_going"].score, 1),
+                "evidence_summary": _evidence_summary(components),
+                "imported_signals": _signal_count(components, "ok"),
+                "proxy_signals": _signal_count(components, "partial"),
+                "missing_signals": _signal_count(components, "missing"),
+                "ability_evidence": _component_evidence_label(components["ability_timeform"]),
+                "speed_evidence": _component_evidence_label(components["speed_beyer_topspeed"]),
+                "class_evidence": _component_evidence_label(components["class_rpr"]),
+                "pace_evidence": _component_evidence_label(components["pace_race_shape"]),
+                "value_evidence": _component_evidence_label(components["value_hugh_taylor"]),
+                "trainer_evidence": _component_evidence_label(components["trainer_intent"]),
+                "jockey_evidence": _component_evidence_label(components["jockey"]),
+                "course_going_evidence": _component_evidence_label(components["course_going"]),
                 "red_flags": "; ".join(trial_warnings[:4]) if trial_warnings else "None",
                 "result": _result_text(item),
                 "outcome": _place_outcome(item),
@@ -154,6 +166,10 @@ def ian_index_acca_dataframe(scores: list[RunnerScore], limit: int = 6) -> pd.Da
         "odds_band",
         "confidence",
         "field_size",
+        "evidence_summary",
+        "imported_signals",
+        "proxy_signals",
+        "missing_signals",
         "result",
         "outcome",
         "red_flags",
@@ -334,6 +350,26 @@ def _data_quality(components: dict[str, IanIndexComponent]) -> str:
     if qualities.count("missing") >= 3:
         return "weak"
     return "partial"
+
+
+def _signal_count(components: dict[str, IanIndexComponent], quality: str) -> int:
+    return sum(1 for component in components.values() if component.data_quality == quality)
+
+
+def _component_evidence_label(component: IanIndexComponent) -> str:
+    labels = {
+        "ok": "Imported",
+        "partial": "Proxy",
+        "missing": "Missing",
+    }
+    return f"{labels.get(component.data_quality, component.data_quality.title())}: {component.explanation}"
+
+
+def _evidence_summary(components: dict[str, IanIndexComponent]) -> str:
+    imported = _signal_count(components, "ok")
+    proxy = _signal_count(components, "partial")
+    missing = _signal_count(components, "missing")
+    return f"Imported {imported} | Proxy {proxy} | Missing {missing}"
 
 
 def _explanation(components: dict[str, IanIndexComponent], item: RunnerScore) -> str:
