@@ -59,6 +59,7 @@ def _trial_card(label: str, row: dict | None) -> None:
     probability = escape(str(row.get("place_probability", "Unavailable")))
     edge = escape(str(row.get("place_value_edge", "Needs odds")))
     odds = escape(str(row.get("odds", "Unavailable")))
+    evidence = escape(str(row.get("evidence_summary", "")))
     explanation = escape(str(row.get("explanation", "")))
     outcome = str(row.get("outcome", "")).upper()
     pick_type = str(row.get("pick_type", "")).lower()
@@ -74,6 +75,7 @@ def _trial_card(label: str, row: dict | None) -> None:
           <div style="font-size:13px;line-height:1.35;color:#4b5563;">{race}</div>
           <div style="font-size:14px;font-weight:750;margin-top:8px;color:#202633;">Place rating {rating} | Odds {odds}</div>
           <div style="font-size:13px;line-height:1.35;color:#4b5563;">Place {probability} | Edge {edge}</div>
+          <div style="font-size:12px;line-height:1.35;margin-top:6px;color:#374151;">{evidence}</div>
           <div style="font-size:12px;line-height:1.35;margin-top:8px;color:#6b7280;">{explanation}</div>
         </div>
         """,
@@ -91,6 +93,7 @@ def _acca_card(row: dict) -> None:
     probability = escape(str(row.get("place_probability", "Unavailable")))
     odds = escape(str(row.get("odds", "Unavailable")))
     edge = escape(str(row.get("place_value_edge", "Needs odds")))
+    evidence = escape(str(row.get("evidence_summary", "")))
     result = escape(str(row.get("result", "Awaiting result")))
     outcome = str(row.get("outcome", "")).upper()
     is_hit = outcome in {"WIN", "PLACED"}
@@ -105,6 +108,7 @@ def _acca_card(row: dict) -> None:
           <div style="font-size:13px;line-height:1.35;color:#4b5563;">{race}</div>
           <div style="font-size:14px;font-weight:750;margin-top:8px;color:#202633;">Place rating {rating} | Place {probability}</div>
           <div style="font-size:13px;line-height:1.35;color:#4b5563;">Odds {odds} | Edge {edge}</div>
+          <div style="font-size:12px;line-height:1.35;margin-top:6px;color:#374151;">{evidence}</div>
           <div style="font-size:12px;line-height:1.35;margin-top:8px;color:#6b7280;">Result {result} | {escape(outcome.title() if outcome else 'Awaiting result')}</div>
         </div>
         """,
@@ -139,6 +143,20 @@ else:
     metric_cols[1].metric("Top place rating", f"{trial_df.iloc[0]['place_rating']}")
     metric_cols[2].metric("Positive place value", f"{trial_df['place_value_edge'].astype(str).str.startswith('+').sum()}")
     metric_cols[3].metric("Weak data rows", f"{trial_df['data_quality'].eq('weak').sum()}")
+
+    st.subheader("Evidence Quality")
+    evidence_cols = st.columns(3)
+    evidence_cols[0].metric("Imported signals", f"{int(trial_df['imported_signals'].sum())}")
+    evidence_cols[1].metric("Proxy signals", f"{int(trial_df['proxy_signals'].sum())}")
+    evidence_cols[2].metric("Missing signals", f"{int(trial_df['missing_signals'].sum())}")
+    with st.expander("Open evidence-quality guide", expanded=False):
+        st.markdown(
+            """
+            - **Imported** means the API supplied a direct or specialist field for that principle.
+            - **Proxy** means the model used available nearby evidence, such as official rating, recent form, draw, odds, history, or trainer/jockey names.
+            - **Missing** means the signal is not present and confidence is reduced.
+            """
+        )
 
     top = trial_df.iloc[0].to_dict()
     value_rows = trial_df[trial_df["place_value_edge"].astype(str).str.startswith("+")]
@@ -177,6 +195,29 @@ else:
 
     st.subheader("Ian Index Place Ratings")
     st.dataframe(research_table_style(trial_df), width="stretch", hide_index=True)
+
+    with st.expander("Open principle evidence by runner", expanded=False):
+        evidence_columns = [
+            "rank",
+            "horse",
+            "course",
+            "off_time",
+            "race",
+            "evidence_summary",
+            "ability_evidence",
+            "speed_evidence",
+            "class_evidence",
+            "pace_evidence",
+            "value_evidence",
+            "trainer_evidence",
+            "jockey_evidence",
+            "course_going_evidence",
+        ]
+        st.dataframe(
+            trial_df[[column for column in evidence_columns if column in trial_df.columns]],
+            width="stretch",
+            hide_index=True,
+        )
 
     st.download_button(
         "Download Ian Model trial CSV",
