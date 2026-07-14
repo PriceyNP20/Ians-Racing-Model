@@ -8,7 +8,6 @@ from ian_racing_model.domain import RunnerScore
 from ian_racing_model.ui import (
     _decimal_odds,
     _each_way_selection_score,
-    _edge_evidence,
     _format_edge,
     _format_probability,
     _is_each_way_candidate,
@@ -179,13 +178,29 @@ def _safe_evidence_profile(item: RunnerScore) -> dict[str, Any]:
             "market": str(profile.get("market", "unknown")),
         }
     except Exception:
-        evidence = _edge_evidence(item)
+        evidence = _fallback_evidence(item)
         market = _market_signal(item.runner.source_payload, item.runner.current_odds)
         return {
             "count": len(evidence),
             "pillars": evidence,
             "market": "supported" if market.startswith("Supported") else "drifting" if market.startswith("Drifting") else "stable",
         }
+
+
+def _fallback_evidence(item: RunnerScore) -> list[str]:
+    evidence: list[str] = []
+    if item.place_probability >= 0.42:
+        evidence.append("place profile")
+    if item.win_probability >= 0.18 and (item.win_value_edge or 0.0) > 0:
+        evidence.append("win edge")
+    if item.confidence >= 0.62:
+        evidence.append("confidence")
+    if not item.red_flags and item.confidence >= 0.56:
+        evidence.append("clean profile")
+    market = _market_signal(item.runner.source_payload, item.runner.current_odds)
+    if market.startswith("Supported"):
+        evidence.append("market support")
+    return evidence
 
 
 def _safe_each_way_gate(item: RunnerScore) -> dict[str, Any]:
