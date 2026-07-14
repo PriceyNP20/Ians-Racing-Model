@@ -1,0 +1,7 @@
+flat:
+  place_slots_default: 3
+  draw_bias_required: true
+
+jumps:
+  place_slots_default: 3
+  jumping_error_penalty: true
