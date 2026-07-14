@@ -148,13 +148,12 @@ def _flatten(value) -> list:
     return [value]
 
 
-def _race_key(item: RunnerScore) -> tuple[str, str, str, str]:
+def _race_key(item: RunnerScore) -> tuple[str, str, str]:
     runner = item.runner
     return (
         str(runner.meeting_date),
         _normalise_identity(runner.course),
         _normalise_off_time(runner.off_time),
-        _normalise_identity(runner.race_name),
     )
 
 
