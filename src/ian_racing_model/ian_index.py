@@ -55,6 +55,7 @@ def ian_index_place_dataframe(scores: list[RunnerScore], limit: int | None = Non
         rows.append(
             {
                 "rank": 0,
+                "pick_type": "Ian Trial place profile",
                 "horse": item.runner.horse,
                 "course": item.runner.course,
                 "off_time": item.runner.off_time,
@@ -74,6 +75,9 @@ def ian_index_place_dataframe(scores: list[RunnerScore], limit: int | None = Non
                 "jockey": round(components["jockey"].score, 1),
                 "course_going": round(components["course_going"].score, 1),
                 "red_flags": "; ".join(item.red_flags[:3]) if item.red_flags else "None",
+                "result": _result_text(item),
+                "outcome": _place_outcome(item),
+                "place_cutoff": _place_cutoff(item.runner.field_size),
                 "explanation": _explanation(components, item),
                 "_sort_rating": place_rating,
                 "_sort_probability": item.place_probability or 0.0,
@@ -93,6 +97,55 @@ def ian_index_place_dataframe(scores: list[RunnerScore], limit: int | None = Non
     df = df.copy()
     df["rank"] = range(1, len(df) + 1)
     return df.drop(columns=["_sort_rating", "_sort_probability", "_sort_edge"])
+
+
+def ian_index_acca_dataframe(scores: list[RunnerScore], limit: int = 6) -> pd.DataFrame:
+    trial = ian_index_place_dataframe(scores)
+    if trial.empty:
+        return pd.DataFrame()
+
+    trial = trial.copy()
+    trial["_field_size"] = trial.apply(lambda row: _field_size_for_row(row, scores), axis=1)
+    trial = trial[trial["_field_size"] >= 8].copy()
+    if trial.empty:
+        return pd.DataFrame()
+
+    selected = []
+    used_races = set()
+    for row in trial.to_dict("records"):
+        race_key = _trial_race_key(row)
+        if race_key in used_races:
+            continue
+        row["acca_rank"] = len(selected) + 1
+        row["pick_type"] = "Ian Trial EW pick"
+        row["field_size"] = int(row.pop("_field_size", 0))
+        selected.append(row)
+        used_races.add(race_key)
+        if len(selected) == limit:
+            break
+
+    if not selected:
+        return pd.DataFrame()
+    df = pd.DataFrame(selected)
+    display_columns = [
+        "acca_rank",
+        "course",
+        "off_time",
+        "race",
+        "pick_type",
+        "horse",
+        "place_rating",
+        "place_probability",
+        "place_value_edge",
+        "odds",
+        "confidence",
+        "field_size",
+        "result",
+        "outcome",
+        "red_flags",
+        "explanation",
+    ]
+    return df[[column for column in display_columns if column in df.columns]]
 
 
 def ian_index_weights_dataframe() -> pd.DataFrame:
@@ -277,6 +330,99 @@ def _component_score(item: RunnerScore, name: str, model_weight: float) -> float
         if component.name == name:
             return _clip(component.score / model_weight * 100.0)
     return None
+
+
+def _field_size_for_row(row: pd.Series, scores: list[RunnerScore]) -> int:
+    for item in scores:
+        runner = item.runner
+        if (
+            runner.horse == row.get("horse")
+            and runner.course == row.get("course")
+            and runner.off_time == row.get("off_time")
+            and runner.race_name == row.get("race")
+        ):
+            return int(runner.field_size or 0)
+    return 0
+
+
+def _trial_race_key(row: dict[str, Any]) -> tuple[str, str]:
+    return (_normalise_identity(row.get("course")), _normalise_off_time(row.get("off_time")))
+
+
+def _result_text(item: RunnerScore) -> str:
+    position = _finish_position(item.runner.source_payload)
+    return str(position) if position is not None else "Awaiting result"
+
+
+def _place_outcome(item: RunnerScore) -> str:
+    position = _finish_position(item.runner.source_payload)
+    if position is None:
+        return "Awaiting result"
+    cutoff = _place_cutoff(item.runner.field_size)
+    if position == 1:
+        return "WIN"
+    if position <= cutoff:
+        return "PLACED"
+    if position == cutoff + 1:
+        return "JUST MISSED"
+    return "LOSE"
+
+
+def _place_cutoff(field_size: int | None) -> int:
+    if field_size is None:
+        return 3
+    if field_size >= 16:
+        return 4
+    if field_size >= 8:
+        return 3
+    if field_size >= 5:
+        return 2
+    return 1
+
+
+def _finish_position(payload: dict[str, Any]) -> int | None:
+    for key in ("result_position", "finish_position", "finishing_position", "position", "pos", "place"):
+        parsed = _parse_position(payload.get(key))
+        if parsed is not None:
+            return parsed
+    for value in payload.values():
+        if isinstance(value, dict):
+            parsed = _finish_position(value)
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _parse_position(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip().lower()
+    if text in {"nr", "non-runner", "pu", "f", "ur", "bd"}:
+        return None
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if not digits:
+        return None
+    try:
+        return int(digits)
+    except ValueError:
+        return None
+
+
+def _normalise_identity(value: Any) -> str:
+    text = str(value or "").replace("\xa0", " ")
+    return " ".join(text.lower().replace("'", "").split())
+
+
+def _normalise_off_time(value: Any) -> str:
+    text = str(value or "").strip().lower().replace(".", ":")
+    parts = text.split(":")
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+        hour = int(parts[0])
+        minute = int(parts[1])
+        if hour > 12:
+            hour -= 12
+        return f"{hour:02d}:{minute:02d}"
+    return text
 
 
 def _metric_value(payload: dict[str, Any], keys: tuple[str, ...]) -> float | None:
