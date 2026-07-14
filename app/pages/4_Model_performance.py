@@ -14,6 +14,10 @@ from ian_racing_model.config import Settings
 from ian_racing_model.edge_quality import probability_calibration_dataframe
 from ian_racing_model.edge_lab import closing_value_dataframe, edge_calibration_dataframe, edge_filter_recommendations
 from ian_racing_model.outsider import outsider_last_time_dataframe
+from ian_racing_model.results_summary import (
+    daily_winning_placing_summary_dataframe,
+    winning_placing_selections_dataframe,
+)
 from ian_racing_model.services import get_model_snapshots, get_scored_card_result
 from ian_racing_model.table_styles import picks_tracker_style, research_table_style
 from ian_racing_model import ui as ui_helpers
@@ -82,6 +86,17 @@ else:
     top_cols[2].metric("Winner win rate", all_summary["winner_win_rate"])
     top_cols[3].metric("EW place rate", all_summary["ew_place_rate"])
     top_cols[4].metric("Just missed", f"{int(all_settled['outcome'].isin(['JUST LOST', 'JUST MISSED']).sum())}")
+    all_hits_df = winning_placing_selections_dataframe(all_picks_df)
+    hit_cols = st.columns(3)
+    hit_cols[0].metric("Winning/placing selections", f"{len(all_hits_df)}")
+    hit_cols[1].metric(
+        "Winner hits",
+        f"{int(all_hits_df['pick_type'].astype(str).eq('Winner pick').sum()) if not all_hits_df.empty else 0}",
+    )
+    hit_cols[2].metric(
+        "EW place hits",
+        f"{int(all_hits_df['pick_type'].astype(str).eq('Best EW pick').sum()) if not all_hits_df.empty else 0}",
+    )
     if not all_breakdown.empty:
         st.dataframe(all_breakdown, width="stretch", hide_index=True)
     all_probability_calibration = probability_calibration_dataframe(all_picks_df)
@@ -109,6 +124,17 @@ else:
     daily_df = pd.DataFrame(daily_rows).sort_values("meeting_date", ascending=False)
     with st.expander("Daily Accuracy Breakdown", expanded=True):
         st.dataframe(daily_df, width="stretch", hide_index=True)
+    daily_hits_df = daily_winning_placing_summary_dataframe(all_picks_df)
+    with st.expander("Daily Winning / Placing Selections", expanded=True):
+        if daily_hits_df.empty:
+            st.info("No winning or placing selections have been matched yet.")
+        else:
+            st.dataframe(picks_tracker_style(daily_hits_df), width="stretch", hide_index=True)
+    with st.expander("Cumulative Winning / Placing Horses", expanded=False):
+        if all_hits_df.empty:
+            st.info("No cumulative winning or placing selections have been matched yet.")
+        else:
+            st.dataframe(picks_tracker_style(all_hits_df), width="stretch", hide_index=True)
 
 st.subheader("Selected Day Detail")
 picks_df = picks_tracker_dataframe(scores)
@@ -122,6 +148,12 @@ else:
     breakdown_df = picks_tracker_breakdown(picks_df)
     if not breakdown_df.empty:
         st.dataframe(breakdown_df, width="stretch", hide_index=True)
+    hits_df = winning_placing_selections_dataframe(picks_df)
+    st.subheader("Selected Day Winning / Placing Selections")
+    if hits_df.empty:
+        st.info("No winning or placing selections have been matched for this date yet.")
+    else:
+        st.dataframe(picks_tracker_style(hits_df), width="stretch", hide_index=True)
     probability_df = probability_calibration_dataframe(picks_df)
     if not probability_df.empty:
         st.subheader("Model Probability Calibration")
@@ -186,7 +218,7 @@ else:
             else:
                 st.dataframe(lab_df, width="stretch", hide_index=True)
     st.dataframe(picks_tracker_style(picks_df), width="stretch", hide_index=True)
-    st.caption("Green highlights model selections that won or placed. All other rows remain white.")
+    st.caption("Green highlights successful model selections: winner picks that won, and EW/place picks that won or placed.")
 
 st.subheader("Outsider Last-Time Signals")
 outsider_df = outsider_last_time_dataframe(scores)
