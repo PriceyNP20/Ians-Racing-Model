@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from ian_racing_model import ui as ui_helpers
+from ian_racing_model.acca import ew_accumulator_dataframe
 from ian_racing_model.config import Settings
 from ian_racing_model.edge_lab import enhanced_undervalued_edge_dataframe, negative_value_dataframe
 from ian_racing_model.outsider import outsider_last_time_dataframe
@@ -111,6 +112,35 @@ def _card(label: str, row: dict | None, tone: str) -> None:
     )
 
 
+def _acca_card(row: dict) -> None:
+    rank = escape(str(row.get("acca_rank", "")))
+    horse = escape(str(row.get("horse", "Unknown")))
+    course = escape(str(row.get("course", "")))
+    race = escape(str(row.get("race", "")))
+    off_time = escape(str(row.get("off_time", "")))
+    odds = escape(str(row.get("odds", "Unavailable")))
+    place_probability = escape(str(row.get("place_probability", "Unavailable")))
+    place_edge = escape(str(row.get("place_edge", "Unavailable")))
+    score = escape(str(row.get("acca_score", "")))
+    pillars = escape(str(row.get("evidence_pillars", "")))
+    warnings = escape(str(row.get("warnings", "")))
+    st.markdown(
+        f"""
+        <div style="border:1px solid #f59e0b;border-radius:8px;padding:14px;min-height:210px;background:#fef3c7;">
+          <div style="font-size:13px;font-weight:750;text-transform:uppercase;color:#78350f;">EW Acca #{rank}</div>
+          <div style="font-size:23px;font-weight:800;margin-top:8px;color:#202633;">{horse}</div>
+          <div style="font-size:14px;line-height:1.35;color:#374151;">{off_time} - {course}</div>
+          <div style="font-size:13px;line-height:1.35;color:#4b5563;">{race}</div>
+          <div style="font-size:14px;font-weight:750;margin-top:8px;color:#202633;">Place {place_probability} | Odds {odds}</div>
+          <div style="font-size:13px;line-height:1.35;color:#4b5563;">Edge {place_edge} | Acca score {score}</div>
+          <div style="font-size:13px;line-height:1.35;margin-top:8px;color:#4b5563;">{pillars}</div>
+          <div style="font-size:12px;line-height:1.35;margin-top:6px;color:#6b7280;">{warnings}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 st.set_page_config(page_title="Daily Edge Card", layout="wide")
 st.title("Daily Edge Card")
 st.caption("Race-day research shortlist. No bet placement or automation.")
@@ -133,6 +163,7 @@ if selected_course != "All UK courses":
 
 runner_df = scores_to_dataframe(scores)
 race_picks = _race_selection_screener_dataframe(scores)
+acca_df = ew_accumulator_dataframe(scores, limit=6)
 edge_df = enhanced_undervalued_edge_dataframe(scores, limit=20)
 value_df = value_screener_dataframe(scores, limit=20)
 negative_df = negative_value_dataframe(scores, limit=20)
@@ -148,8 +179,22 @@ avoid_row = negative_df.iloc[0].to_dict() if not negative_df.empty else None
 metric_cols = st.columns(4)
 metric_cols[0].metric("Races", f"{runner_df[['course', 'off_time', 'race']].drop_duplicates().shape[0] if not runner_df.empty else 0}")
 metric_cols[1].metric("Runners", f"{len(runner_df)}")
-metric_cols[2].metric("Positive edge rows", f"{len(edge_df) + len(value_df)}")
+metric_cols[2].metric("EW acca picks", f"{len(acca_df)}/6")
 metric_cols[3].metric("Avoid flags", f"{len(negative_df)}")
+
+st.subheader("EW Accumulator 6")
+st.caption("Six strongest place profiles across the selected cards. Research shortlist only; no staking or bet placement.")
+if acca_df.empty:
+    st.info("No six-runner EW accumulator shortlist is available from the current place evidence.")
+else:
+    acca_rows = acca_df.to_dict("records")
+    for start in range(0, len(acca_rows), 3):
+        cols = st.columns(3)
+        for col, row in zip(cols, acca_rows[start : start + 3]):
+            with col:
+                _acca_card(row)
+    with st.expander("Open EW accumulator table", expanded=True):
+        st.dataframe(research_table_style(acca_df), width="stretch", hide_index=True)
 
 st.subheader("Today's Edge Card")
 card_cols = st.columns(5)
