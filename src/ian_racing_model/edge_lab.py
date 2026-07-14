@@ -6,6 +6,7 @@ import pandas as pd
 
 from ian_racing_model.domain import RunnerScore
 from ian_racing_model.edge import undervalued_edge_dataframe
+from ian_racing_model.calibration_rules import each_way_gate, evidence_profile
 
 
 def enhanced_undervalued_edge_dataframe(scores: list[RunnerScore], limit: int = 12) -> pd.DataFrame:
@@ -20,6 +21,19 @@ def enhanced_undervalued_edge_dataframe(scores: list[RunnerScore], limit: int = 
         lambda row: row["_edge_score"] - _longshot_drag(row["_odds"], row["_evidence"]),
         axis=1,
     )
+    score_by_key = {
+        (
+            score.runner.course,
+            score.runner.off_time,
+            score.runner.race_name,
+            score.runner.horse,
+        ): score
+        for score in scores
+    }
+    gates = adjusted.apply(lambda row: _gate_columns(row, score_by_key), axis=1, result_type="expand")
+    if not gates.empty:
+        adjusted = pd.concat([adjusted, gates], axis=1)
+        adjusted.loc[adjusted["evidence_gate"].eq("Blocked"), "_edge_score"] -= 25.0
     adjusted["edge_score"] = adjusted["_edge_score"].round(2)
     adjusted = adjusted.sort_values(["_edge_score", "confidence"], ascending=[False, False]).head(limit)
     adjusted = adjusted.drop(columns=["rank", "_edge_score", "_odds", "_evidence"], errors="ignore")
@@ -183,6 +197,32 @@ def _longshot_drag(odds: float | None, evidence: str) -> float:
     if odds >= 34:
         return 18.0
     return 10.0
+
+
+def _gate_columns(row: pd.Series, score_by_key: dict[tuple[str, str, str, str], RunnerScore]) -> dict[str, Any]:
+    score = score_by_key.get(
+        (
+            str(row.get("course", "")),
+            str(row.get("off_time", "")),
+            str(row.get("race", "")),
+            str(row.get("horse", "")),
+        )
+    )
+    if score is None:
+        return {
+            "evidence_gate": "Unknown",
+            "evidence_count": 0,
+            "evidence_pillars": "Unavailable",
+            "gate_reason": "Runner score not matched",
+        }
+    profile = evidence_profile(score)
+    gate = each_way_gate(score)
+    return {
+        "evidence_gate": "Passed" if gate["qualified"] else "Blocked",
+        "evidence_count": profile["count"],
+        "evidence_pillars": ", ".join(profile["pillars"]) if profile["pillars"] else "None",
+        "gate_reason": gate["reason"],
+    }
 
 
 def _negative_value_reasons(item: RunnerScore, odds: float, win_edge: float, place_edge: float) -> list[str]:
