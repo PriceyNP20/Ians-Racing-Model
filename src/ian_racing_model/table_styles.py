@@ -13,6 +13,8 @@ STYLE_SIGNAL_COLUMNS = {
     "calibration_reason",
     "clv_signal",
     "danger_score",
+    "edge_label",
+    "edge_quality_score",
     "edge_score",
     "edge_read",
     "edge_type",
