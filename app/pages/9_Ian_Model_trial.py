@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from ian_racing_model.config import Settings
-from ian_racing_model.ian_index import ian_index_place_dataframe, ian_index_weights_dataframe
+from ian_racing_model.ian_index import ian_index_acca_dataframe, ian_index_place_dataframe, ian_index_weights_dataframe
+from ian_racing_model.results_summary import winning_placing_selections_dataframe
 from ian_racing_model.services import get_scored_card_result
 from ian_racing_model.table_styles import research_table_style
 from ian_racing_model.ui import available_courses, default_date
@@ -38,9 +39,14 @@ def _trial_card(label: str, row: dict | None) -> None:
     edge = escape(str(row.get("place_value_edge", "Needs odds")))
     odds = escape(str(row.get("odds", "Unavailable")))
     explanation = escape(str(row.get("explanation", "")))
+    outcome = str(row.get("outcome", "")).upper()
+    pick_type = str(row.get("pick_type", "")).lower()
+    is_hit = outcome == "WIN" or (("ew" in pick_type or "place" in pick_type) and outcome == "PLACED")
+    background = "#dcfce7" if is_hit else "#ffffff"
+    border = "#86efac" if is_hit else "#d8dee8"
     st.markdown(
         f"""
-        <div style="border:1px solid #d8dee8;border-radius:8px;padding:14px;min-height:210px;background:#ffffff;">
+        <div style="border:1px solid {border};border-radius:8px;padding:14px;min-height:210px;background:{background};">
           <div style="font-size:13px;font-weight:750;text-transform:uppercase;color:#374151;">{escape(label)}</div>
           <div style="font-size:23px;font-weight:800;margin-top:8px;color:#202633;">{horse}</div>
           <div style="font-size:14px;line-height:1.35;color:#374151;">{off_time} - {course}</div>
@@ -48,6 +54,37 @@ def _trial_card(label: str, row: dict | None) -> None:
           <div style="font-size:14px;font-weight:750;margin-top:8px;color:#202633;">Place rating {rating} | Odds {odds}</div>
           <div style="font-size:13px;line-height:1.35;color:#4b5563;">Place {probability} | Edge {edge}</div>
           <div style="font-size:12px;line-height:1.35;margin-top:8px;color:#6b7280;">{explanation}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _acca_card(row: dict) -> None:
+    rank = escape(str(row.get("acca_rank", "")))
+    horse = escape(str(row.get("horse", "Unknown")))
+    course = escape(str(row.get("course", "")))
+    off_time = escape(str(row.get("off_time", "")))
+    race = escape(str(row.get("race", "")))
+    rating = escape(str(row.get("place_rating", "")))
+    probability = escape(str(row.get("place_probability", "Unavailable")))
+    odds = escape(str(row.get("odds", "Unavailable")))
+    edge = escape(str(row.get("place_value_edge", "Needs odds")))
+    result = escape(str(row.get("result", "Awaiting result")))
+    outcome = str(row.get("outcome", "")).upper()
+    is_hit = outcome in {"WIN", "PLACED"}
+    background = "#dcfce7" if is_hit else "#ffffff"
+    border = "#86efac" if is_hit else "#d8dee8"
+    st.markdown(
+        f"""
+        <div style="border:1px solid {border};border-radius:8px;padding:14px;min-height:215px;background:{background};">
+          <div style="font-size:13px;font-weight:750;text-transform:uppercase;color:#374151;">Ian Trial Acca #{rank}</div>
+          <div style="font-size:23px;font-weight:800;margin-top:8px;color:#202633;">{horse}</div>
+          <div style="font-size:14px;line-height:1.35;color:#374151;">{off_time} - {course}</div>
+          <div style="font-size:13px;line-height:1.35;color:#4b5563;">{race}</div>
+          <div style="font-size:14px;font-weight:750;margin-top:8px;color:#202633;">Place rating {rating} | Place {probability}</div>
+          <div style="font-size:13px;line-height:1.35;color:#4b5563;">Odds {odds} | Edge {edge}</div>
+          <div style="font-size:12px;line-height:1.35;margin-top:8px;color:#6b7280;">Result {result} | {escape(outcome.title() if outcome else 'Awaiting result')}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -71,6 +108,7 @@ if selected_course != "All UK courses":
     scores = [score for score in scores if score.runner.course == selected_course]
 
 trial_df = ian_index_place_dataframe(scores)
+acca_df = ian_index_acca_dataframe(scores)
 
 if trial_df.empty:
     st.info("No eligible runners are available for the Ian Index trial.")
@@ -95,6 +133,26 @@ else:
         _trial_card("Best Place Value", value)
     with cols[2]:
         _trial_card("Cleanest Place Profile", clean)
+
+    st.subheader("Ian Trial EW Accumulator 6")
+    st.caption("Six strongest Ian Index place profiles across the selected cards. One runner per race; fields under 8 runners are excluded.")
+    if acca_df.empty:
+        st.info("No six-runner Ian Trial acca shortlist is available from the current place evidence.")
+    else:
+        rows = acca_df.to_dict("records")
+        for start in range(0, len(rows), 3):
+            acca_cols = st.columns(3)
+            for col, row in zip(acca_cols, rows[start : start + 3]):
+                with col:
+                    _acca_card(row)
+        hits_df = winning_placing_selections_dataframe(acca_df)
+        st.subheader("Ian Trial Winning / Placing Acca Picks")
+        if hits_df.empty:
+            st.info("No Ian Trial acca picks have won or placed yet for this date.")
+        else:
+            st.dataframe(research_table_style(hits_df), width="stretch", hide_index=True)
+        with st.expander("Open Ian Trial acca table", expanded=True):
+            st.dataframe(research_table_style(acca_df), width="stretch", hide_index=True)
 
     st.subheader("Ian Index Place Ratings")
     st.dataframe(research_table_style(trial_df), width="stretch", hide_index=True)
