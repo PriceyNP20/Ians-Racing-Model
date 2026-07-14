@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from ian_racing_model.domain import Runner, RunnerScore
-from ian_racing_model.ian_index import IAN_INDEX_V4_WEIGHTS, ian_index_place_dataframe
+from ian_racing_model.ian_index import IAN_INDEX_V4_WEIGHTS, ian_index_acca_dataframe, ian_index_place_dataframe
 
 
 def _runner(**overrides) -> Runner:
@@ -112,3 +112,41 @@ def test_ian_index_missing_data_lowers_confidence() -> None:
     confidence = dict(zip(trial["horse"], trial["confidence"], strict=True))
 
     assert confidence["Rich Data"] > confidence["Thin Data"]
+
+
+def test_ian_index_acca_takes_one_runner_per_race_and_requires_eight_runners() -> None:
+    same_race_strong = _score(
+        _runner(horse="Same Race Strong", off_time="15:00", race_name="Shared Race", field_size=10),
+        place_probability=0.6,
+        place_value_edge=0.12,
+    )
+    same_race_weaker = _score(
+        _runner(horse="Same Race Weaker", off_time="15:00", race_name="Shared Race", field_size=10),
+        place_probability=0.45,
+        place_value_edge=0.08,
+    )
+    small_field = _score(
+        _runner(horse="Small Field", off_time="16:00", race_name="Tiny Race", field_size=7),
+        place_probability=0.65,
+        place_value_edge=0.14,
+    )
+
+    acca = ian_index_acca_dataframe([same_race_weaker, small_field, same_race_strong])
+
+    assert acca["horse"].tolist() == ["Same Race Strong"]
+    assert acca["field_size"].min() >= 8
+
+
+def test_ian_index_adds_place_result_outcome_for_colour_coding() -> None:
+    placed = _score(
+        _runner(horse="Placed Runner", source_payload={"result_position": 3}, field_size=12),
+        place_probability=0.5,
+        place_value_edge=0.08,
+    )
+
+    trial = ian_index_place_dataframe([placed])
+    acca = ian_index_acca_dataframe([placed])
+
+    assert trial.iloc[0]["outcome"] == "PLACED"
+    assert acca.iloc[0]["pick_type"] == "Ian Trial EW pick"
+    assert acca.iloc[0]["outcome"] == "PLACED"
