@@ -308,6 +308,61 @@ def test_ew_accumulator_dedupes_same_course_and_time_even_if_race_name_differs()
     assert acca["horse"].tolist() == ["Beverley First"]
 
 
+def test_ew_accumulator_dedupes_twelve_and_twenty_four_hour_times() -> None:
+    first = RunnerScore(
+        _runner(
+            horse="Afternoon Time First",
+            course="Ffos Las",
+            off_time="15:48",
+            race_name="Preventapest Handicap Stakes",
+            field_size=10,
+            current_odds="9/2",
+            source_payload={"speed_figure": 92, "trainer_ae": 1.2},
+        ),
+        72,
+        0.7,
+        "EACH_WAY",
+        "",
+        0.1,
+        0.54,
+        10.0,
+        2.1,
+        0.01,
+        0.1,
+        [],
+        [],
+        [],
+    )
+    second = RunnerScore(
+        _runner(
+            horse="Afternoon Time Second",
+            course="Ffos Las",
+            off_time="3:48",
+            race_name="Preventapest Handicap Stakes",
+            field_size=10,
+            current_odds="12/1",
+            source_payload={"speed_figure": 90, "trainer_ae": 1.1},
+        ),
+        70,
+        0.68,
+        "EACH_WAY",
+        "",
+        0.1,
+        0.5,
+        10.0,
+        2.1,
+        0.01,
+        0.09,
+        [],
+        [],
+        [],
+    )
+
+    acca = ew_accumulator_dataframe([first, second], limit=6)
+
+    assert acca["horse"].tolist() == ["Afternoon Time First"]
+
+
 def test_edge_calibration_groups_settled_picks() -> None:
     picks = pd.DataFrame(
         [
