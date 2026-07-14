@@ -120,23 +120,55 @@ def _ensure_evidence_columns(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     df = df.copy()
-    defaults = {
-        "evidence_summary": "Imported 0 | Proxy 0 | Missing 8",
-        "imported_signals": 0,
-        "proxy_signals": 0,
-        "missing_signals": 8,
-        "ability_evidence": "Missing: Evidence label unavailable",
-        "speed_evidence": "Missing: Evidence label unavailable",
-        "class_evidence": "Missing: Evidence label unavailable",
-        "pace_evidence": "Missing: Evidence label unavailable",
-        "value_evidence": "Missing: Evidence label unavailable",
-        "trainer_evidence": "Missing: Evidence label unavailable",
-        "jockey_evidence": "Missing: Evidence label unavailable",
-        "course_going_evidence": "Missing: Evidence label unavailable",
+    evidence_map = {
+        "ability_evidence": ("ability_timeform", "Ability proxy from OR/form/model rating"),
+        "speed_evidence": ("speed_beyer_topspeed", "Speed proxy from recent form/model performance"),
+        "class_evidence": ("class_rpr", "Class proxy from OR/race grade"),
+        "pace_evidence": ("pace_race_shape", "Pace proxy from draw and field shape"),
+        "value_evidence": ("value_hugh_taylor", "Value proxy from place probability and available odds"),
+        "trainer_evidence": ("trainer_intent", "Trainer proxy from available trainer/profile fields"),
+        "jockey_evidence": ("jockey", "Jockey proxy from booking/claim fields"),
+        "course_going_evidence": ("course_going", "Course/going proxy from model suitability fields"),
     }
-    for column, default in defaults.items():
-        if column not in df.columns:
-            df[column] = default
+
+    if not {"imported_signals", "proxy_signals", "missing_signals"}.issubset(df.columns):
+        proxy_counts = []
+        missing_counts = []
+        for _, row in df.iterrows():
+            proxy = 0
+            missing = 0
+            for score_column, _ in evidence_map.values():
+                value = row.get(score_column)
+                if pd.notna(value) and str(value).strip() not in {"", "nan", "None"}:
+                    proxy += 1
+                else:
+                    missing += 1
+            proxy_counts.append(proxy)
+            missing_counts.append(missing)
+        df["imported_signals"] = 0
+        df["proxy_signals"] = proxy_counts
+        df["missing_signals"] = missing_counts
+
+    for evidence_column, (score_column, label) in evidence_map.items():
+        if evidence_column not in df.columns:
+            df[evidence_column] = df.apply(
+                lambda row: (
+                    f"Proxy: {label}"
+                    if pd.notna(row.get(score_column)) and str(row.get(score_column)).strip() not in {"", "nan", "None"}
+                    else "Missing: Evidence label unavailable"
+                ),
+                axis=1,
+            )
+
+    if "evidence_summary" not in df.columns:
+        df["evidence_summary"] = df.apply(
+            lambda row: (
+                f"Imported {int(row.get('imported_signals', 0))} | "
+                f"Proxy {int(row.get('proxy_signals', 0))} | "
+                f"Missing {int(row.get('missing_signals', 8))}"
+            ),
+            axis=1,
+        )
     return df
 
 
