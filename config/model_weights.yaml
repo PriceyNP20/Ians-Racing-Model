@@ -1,0 +1,17 @@
+win_index:
+  ability: 25
+  current_performance: 20
+  class: 15
+  pace_draw: 15
+  trainer_jockey: 10
+  course_distance_going: 10
+  market: 5
+
+place_index:
+  reliability: 25
+  current_performance: 20
+  course_distance_going: 15
+  pace_draw: 15
+  class_fit: 10
+  trainer_jockey: 10
+  market_value: 5
