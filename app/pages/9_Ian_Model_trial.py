@@ -116,6 +116,30 @@ def _acca_card(row: dict) -> None:
     )
 
 
+def _ensure_evidence_columns(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    df = df.copy()
+    defaults = {
+        "evidence_summary": "Imported 0 | Proxy 0 | Missing 8",
+        "imported_signals": 0,
+        "proxy_signals": 0,
+        "missing_signals": 8,
+        "ability_evidence": "Missing: Evidence label unavailable",
+        "speed_evidence": "Missing: Evidence label unavailable",
+        "class_evidence": "Missing: Evidence label unavailable",
+        "pace_evidence": "Missing: Evidence label unavailable",
+        "value_evidence": "Missing: Evidence label unavailable",
+        "trainer_evidence": "Missing: Evidence label unavailable",
+        "jockey_evidence": "Missing: Evidence label unavailable",
+        "course_going_evidence": "Missing: Evidence label unavailable",
+    }
+    for column, default in defaults.items():
+        if column not in df.columns:
+            df[column] = default
+    return df
+
+
 st.set_page_config(page_title="Ian Model Trial", layout="wide")
 st.title("Ian Model Trial")
 st.caption("Ian Index V4: a place-rating trial. This ranks who is most likely to place, not who wins. Research only.")
@@ -132,8 +156,8 @@ selected_course = st.selectbox("Course", course_options)
 if selected_course != "All UK courses":
     scores = [score for score in scores if score.runner.course == selected_course]
 
-trial_df = ian_index_place_dataframe(scores)
-acca_df = ian_index_acca_dataframe(scores)
+trial_df = _ensure_evidence_columns(ian_index_place_dataframe(scores))
+acca_df = _ensure_evidence_columns(ian_index_acca_dataframe(scores))
 
 if trial_df.empty:
     st.info("No eligible runners are available for the Ian Index trial.")
