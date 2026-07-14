@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from ian_racing_model.results_summary import selection_hit
+
 
 STYLE_WINNER = "background-color: #dcfce7; color: #14532d;"
 STYLE_SIGNAL_COLUMNS = {
@@ -29,8 +31,10 @@ STYLE_SIGNAL_COLUMNS = {
 
 def picks_tracker_style(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     def row_style(row: pd.Series) -> list[str]:
-        status = str(row.get("outcome", "")).upper()
-        colour = STYLE_WINNER if status in {"WIN", "PLACED"} else ""
+        if _is_successful_selection(row):
+            colour = STYLE_WINNER
+        else:
+            colour = ""
         return [colour] * len(row)
 
     return df.style.apply(row_style, axis=1)
@@ -53,7 +57,6 @@ def install_streamlit_table_styles() -> None:
         return
 
     original_dataframe = st.dataframe
-
     def styled_dataframe(data=None, *args, **kwargs):
         if isinstance(data, pd.DataFrame) and _should_style_dataframe(data):
             data = research_table_style(data)
@@ -68,7 +71,10 @@ def _should_style_dataframe(df: pd.DataFrame) -> bool:
 
 
 def _research_row_style(row: pd.Series) -> str:
-    outcome = str(row.get("outcome", "")).upper()
-    if outcome in {"WIN", "PLACED"}:
+    if _is_successful_selection(row):
         return STYLE_WINNER
     return ""
+
+
+def _is_successful_selection(row: pd.Series) -> bool:
+    return selection_hit(row)
