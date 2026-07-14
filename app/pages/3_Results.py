@@ -9,12 +9,13 @@ sys.path.insert(0, str(ROOT / "src"))
 import streamlit as st
 
 from ian_racing_model.config import Settings
+from ian_racing_model.results_summary import winning_placing_selections_dataframe
 from ian_racing_model.services import get_scored_card_result
+from ian_racing_model.table_styles import picks_tracker_style
 from ian_racing_model.ui import (
     available_courses,
     default_date,
     picks_tracker_dataframe,
-    picks_tracker_style,
     picks_tracker_summary,
 )
 
@@ -44,4 +45,10 @@ else:
     winner_metric, ew_metric = st.columns(2)
     winner_metric.metric("Winner pick win rate", summary["winner_win_rate"])
     ew_metric.metric("Best EW place rate", summary["ew_place_rate"])
+    hits_df = winning_placing_selections_dataframe(picks_df)
+    st.subheader("Winning / Placing Selections")
+    if hits_df.empty:
+        st.info("No winning or placing selections have been matched for this date yet.")
+    else:
+        st.dataframe(picks_tracker_style(hits_df), width="stretch", hide_index=True)
     st.dataframe(picks_tracker_style(picks_df), width="stretch", hide_index=True)
