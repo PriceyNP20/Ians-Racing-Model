@@ -1,0 +1,15 @@
+racecards:
+  active: the_racing_api
+  fallback: mock
+
+results:
+  active: the_racing_api
+  fallback: none
+
+markets:
+  active: racecard_odds
+  fallback: none
+
+weather:
+  active: none
+  fallback: none
