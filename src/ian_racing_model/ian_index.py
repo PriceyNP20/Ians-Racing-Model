@@ -51,7 +51,9 @@ def ian_index_place_dataframe(scores: list[RunnerScore], limit: int | None = Non
             components[name].confidence * weight / 100.0
             for name, weight in IAN_INDEX_V4_WEIGHTS.items()
         )
-        place_rating = _clip(weighted_score - red_flag_drag)
+        outsider_drag = _outsider_sanity_drag(item, components)
+        trial_warnings = _trial_warnings(item, outsider_drag)
+        place_rating = _clip(weighted_score - red_flag_drag - outsider_drag)
         rows.append(
             {
                 "rank": 0,
@@ -64,6 +66,7 @@ def ian_index_place_dataframe(scores: list[RunnerScore], limit: int | None = Non
                 "place_probability": _format_probability(item.place_probability),
                 "place_value_edge": _format_edge(item.place_value_edge),
                 "odds": item.runner.current_odds or "Unavailable",
+                "odds_band": _odds_band(_decimal_odds(item.runner.current_odds)),
                 "confidence": round(confidence, 2),
                 "data_quality": _data_quality(components),
                 "ability_timeform": round(components["ability_timeform"].score, 1),
@@ -74,7 +77,7 @@ def ian_index_place_dataframe(scores: list[RunnerScore], limit: int | None = Non
                 "trainer_intent": round(components["trainer_intent"].score, 1),
                 "jockey": round(components["jockey"].score, 1),
                 "course_going": round(components["course_going"].score, 1),
-                "red_flags": "; ".join(item.red_flags[:3]) if item.red_flags else "None",
+                "red_flags": "; ".join(trial_warnings[:4]) if trial_warnings else "None",
                 "result": _result_text(item),
                 "outcome": _place_outcome(item),
                 "place_cutoff": _place_cutoff(item.runner.field_size),
@@ -106,7 +109,17 @@ def ian_index_acca_dataframe(scores: list[RunnerScore], limit: int = 6) -> pd.Da
 
     trial = trial.copy()
     trial["_field_size"] = trial.apply(lambda row: _field_size_for_row(row, scores), axis=1)
+    trial["_decimal_odds"] = trial["odds"].map(_decimal_odds)
+    trial["_place_probability"] = trial["place_probability"].map(_parse_probability_text)
+    trial["_place_rating"] = pd.to_numeric(trial["place_rating"], errors="coerce")
+    trial["_confidence"] = pd.to_numeric(trial["confidence"], errors="coerce")
     trial = trial[trial["_field_size"] >= 8].copy()
+    trial = trial[
+        trial["_place_rating"].ge(55)
+        & trial["_confidence"].ge(0.45)
+        & trial["_place_probability"].ge(0.30)
+        & (trial["_decimal_odds"].isna() | trial["_decimal_odds"].le(21.0))
+    ].copy()
     if trial.empty:
         return pd.DataFrame()
 
@@ -138,6 +151,7 @@ def ian_index_acca_dataframe(scores: list[RunnerScore], limit: int = 6) -> pd.Da
         "place_probability",
         "place_value_edge",
         "odds",
+        "odds_band",
         "confidence",
         "field_size",
         "result",
@@ -244,9 +258,14 @@ def _value_hugh_taylor(item: RunnerScore) -> IanIndexComponent:
     odds = _decimal_odds(item.runner.current_odds)
     if edge is None and odds is None:
         return IanIndexComponent(46.0 + probability * 35.0, 0.35, "partial", "No odds; place chance only")
-    edge_part = max(-0.12, min(0.22, edge or 0.0)) * 155.0
-    odds_part = 4.0 if odds is not None and 5.0 <= odds <= 16.0 else -4.0 if odds is not None and odds >= 25.0 else 0.0
-    score = 50.0 + probability * 24.0 + edge_part + odds_part
+    edge_cap = 0.16
+    if odds is not None and odds >= 26.0:
+        edge_cap = 0.03
+    elif odds is not None and odds >= 17.0:
+        edge_cap = 0.06
+    edge_part = max(-0.12, min(edge_cap, edge or 0.0)) * 120.0
+    odds_part = _place_price_shape_score(odds)
+    score = 48.0 + probability * 22.0 + edge_part + odds_part
     quality = "ok" if edge is not None else "partial"
     return IanIndexComponent(_clip(score), 0.82 if edge is not None else 0.45, quality, "Place value versus available odds")
 
@@ -320,6 +339,9 @@ def _data_quality(components: dict[str, IanIndexComponent]) -> str:
 def _explanation(components: dict[str, IanIndexComponent], item: RunnerScore) -> str:
     strongest = sorted(components.items(), key=lambda pair: pair[1].score, reverse=True)[:3]
     notes = [f"{name.replace('_', ' ')}: {component.explanation}" for name, component in strongest]
+    outsider_drag = _outsider_sanity_drag(item, components)
+    if outsider_drag:
+        notes.append(f"outsider sanity drag: -{outsider_drag:.0f}")
     if item.red_flags:
         notes.append("cautions: " + "; ".join(item.red_flags[:2]))
     return " | ".join(notes)
@@ -343,6 +365,78 @@ def _field_size_for_row(row: pd.Series, scores: list[RunnerScore]) -> int:
         ):
             return int(runner.field_size or 0)
     return 0
+
+
+def _outsider_sanity_drag(item: RunnerScore, components: dict[str, IanIndexComponent]) -> float:
+    odds = _decimal_odds(item.runner.current_odds)
+    if odds is None or odds < 17.0:
+        return 0.0
+
+    drag = 8.0
+    if odds >= 26.0:
+        drag = 16.0
+    if odds >= 41.0:
+        drag = 24.0
+
+    hard_evidence = sum(
+        1
+        for name in ("ability_timeform", "speed_beyer_topspeed", "class_rpr")
+        if components[name].data_quality == "ok" and components[name].score >= 58.0
+    )
+    if hard_evidence >= 2 and item.confidence >= 0.62 and item.place_probability >= 0.36:
+        drag *= 0.35
+    elif item.place_probability >= 0.42 and item.confidence >= 0.68:
+        drag *= 0.6
+    return drag
+
+
+def _trial_warnings(item: RunnerScore, outsider_drag: float) -> list[str]:
+    warnings = list(item.red_flags[:3])
+    odds = _decimal_odds(item.runner.current_odds)
+    if outsider_drag:
+        warnings.append(f"outsider risk: odds {item.runner.current_odds or 'unavailable'}")
+    if odds is not None and odds >= 21.0 and item.confidence < 0.65:
+        warnings.append("price too big without strong evidence")
+    return warnings
+
+
+def _place_price_shape_score(odds: float | None) -> float:
+    if odds is None:
+        return -2.0
+    if 3.0 <= odds <= 10.0:
+        return 5.0
+    if odds <= 16.0:
+        return 1.5
+    if odds <= 21.0:
+        return -7.0
+    if odds <= 34.0:
+        return -15.0
+    return -24.0
+
+
+def _odds_band(odds: float | None) -> str:
+    if odds is None:
+        return "No odds"
+    if odds < 3.0:
+        return "Under 3.0"
+    if odds < 6.0:
+        return "3.0 to 5.99"
+    if odds < 10.0:
+        return "6.0 to 9.99"
+    if odds < 17.0:
+        return "10.0 to 16.99"
+    if odds <= 21.0:
+        return "17.0 to 21.0"
+    return "Over 21.0"
+
+
+def _parse_probability_text(value: Any) -> float | None:
+    if value in (None, "", "Unavailable"):
+        return None
+    try:
+        return float(str(value).replace("%", "").strip()) / 100.0
+    except ValueError:
+        return None
 
 
 def _trial_race_key(row: dict[str, Any]) -> tuple[str, str]:
