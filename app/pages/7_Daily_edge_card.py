@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from ian_racing_model import ui as ui_helpers
 from ian_racing_model.acca import ew_accumulator_dataframe
 from ian_racing_model.config import Settings
+from ian_racing_model.edge_quality import edge_quality_dataframe
 from ian_racing_model.edge_lab import enhanced_undervalued_edge_dataframe, negative_value_dataframe
 from ian_racing_model.outsider import outsider_last_time_dataframe
 from ian_racing_model.services import get_scored_card_result
@@ -169,6 +170,7 @@ value_df = value_screener_dataframe(scores, limit=20)
 negative_df = negative_value_dataframe(scores, limit=20)
 outsider_df = outsider_last_time_dataframe(scores)
 signal_df = _model_signal_dataframe(scores, limit=30)
+quality_df = edge_quality_dataframe(scores, limit=30)
 
 winner_row = _top_row(race_picks, "pick", "Winner")
 ew_row = _top_row(race_picks, "pick", "EW|value")
@@ -214,6 +216,13 @@ if race_picks.empty:
     st.info("No race-level picks are available.")
 else:
     st.dataframe(research_table_style(race_picks), width="stretch", hide_index=True)
+
+st.subheader("Edge Quality Screener")
+if quality_df.empty:
+    st.info("No edge-quality shortlist is available from the current runners.")
+else:
+    st.caption("Combines win/place edge, confidence, evidence pillars, market movement, red flags and closing-price signal.")
+    st.dataframe(research_table_style(quality_df), width="stretch", hide_index=True)
 
 st.subheader("Undervalued Edge Shortlist")
 if edge_df.empty:
