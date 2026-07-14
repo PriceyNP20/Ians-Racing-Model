@@ -54,6 +54,7 @@ def ian_index_place_dataframe(scores: list[RunnerScore], limit: int | None = Non
         outsider_drag = _outsider_sanity_drag(item, components)
         trial_warnings = _trial_warnings(item, outsider_drag)
         place_rating = _clip(weighted_score - red_flag_drag - outsider_drag)
+        selection_status, selection_note = _selection_gate(item, components, place_rating, confidence)
         rows.append(
             {
                 "rank": 0,
@@ -69,6 +70,9 @@ def ian_index_place_dataframe(scores: list[RunnerScore], limit: int | None = Non
                 "odds_band": _odds_band(_decimal_odds(item.runner.current_odds)),
                 "confidence": round(confidence, 2),
                 "data_quality": _data_quality(components),
+                "selection_status": selection_status,
+                "selection_note": selection_note,
+                "place_pick_eligible": selection_status == "ELIGIBLE",
                 "ability_timeform": round(components["ability_timeform"].score, 1),
                 "speed_beyer_topspeed": round(components["speed_beyer_topspeed"].score, 1),
                 "class_rpr": round(components["class_rpr"].score, 1),
@@ -125,6 +129,8 @@ def ian_index_acca_dataframe(scores: list[RunnerScore], limit: int = 6) -> pd.Da
     trial["_place_probability"] = trial["place_probability"].map(_parse_probability_text)
     trial["_place_rating"] = pd.to_numeric(trial["place_rating"], errors="coerce")
     trial["_confidence"] = pd.to_numeric(trial["confidence"], errors="coerce")
+    if "place_pick_eligible" in trial.columns:
+        trial = trial[trial["place_pick_eligible"].eq(True)].copy()
     trial = trial[trial["_field_size"] >= 8].copy()
     trial = trial[
         trial["_place_rating"].ge(55)
@@ -166,6 +172,8 @@ def ian_index_acca_dataframe(scores: list[RunnerScore], limit: int = 6) -> pd.Da
         "odds_band",
         "confidence",
         "field_size",
+        "selection_status",
+        "selection_note",
         "evidence_summary",
         "imported_signals",
         "proxy_signals",
@@ -424,6 +432,39 @@ def _outsider_sanity_drag(item: RunnerScore, components: dict[str, IanIndexCompo
     elif item.place_probability >= 0.42 and item.confidence >= 0.68:
         drag *= 0.6
     return drag
+
+
+def _selection_gate(
+    item: RunnerScore,
+    components: dict[str, IanIndexComponent],
+    place_rating: float,
+    confidence: float,
+) -> tuple[str, str]:
+    odds = _decimal_odds(item.runner.current_odds)
+    field_size = item.runner.field_size or 0
+    place_probability = item.place_probability or 0.0
+    missing = _signal_count(components, "missing")
+    imported = _signal_count(components, "ok")
+
+    if field_size < 8:
+        return "WATCH_ONLY", "EW/place shortlist excludes fields under 8 runners."
+    if odds is None:
+        return "WATCH_ONLY", "No available odds, so value cannot be verified."
+    if odds < 3.0:
+        return "WATCH_ONLY", "Odds-on/very short price: likely but no EW/place value edge."
+    if odds > 21.0:
+        return "WATCH_ONLY", "Price too big for the disciplined place shortlist."
+    if missing >= 3:
+        return "WATCH_ONLY", "Too many missing Ian Index evidence signals."
+    if confidence < 0.42:
+        return "WATCH_ONLY", "Confidence below place-shortlist threshold."
+    if place_probability < 0.30:
+        return "WATCH_ONLY", "Model place probability below shortlist threshold."
+    if place_rating < 55.0:
+        return "WATCH_ONLY", "Place rating below shortlist threshold."
+    if odds >= 17.0 and imported == 0:
+        return "WATCH_ONLY", "Bigger price needs at least one imported hard signal."
+    return "ELIGIBLE", "Meets disciplined Ian Trial place-shortlist gates."
 
 
 def _trial_warnings(item: RunnerScore, outsider_drag: float) -> list[str]:
