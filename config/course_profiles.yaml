@@ -1,0 +1,4 @@
+default:
+  draw_bias_engine: neutral
+  pace_map_engine: basic
+  going_provider: racecard
