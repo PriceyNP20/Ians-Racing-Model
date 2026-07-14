@@ -90,6 +90,30 @@ def test_ian_index_rewards_positive_place_value() -> None:
     assert trial.iloc[0]["horse"] == "Value Runner"
 
 
+def test_ian_index_penalises_big_price_without_hard_evidence() -> None:
+    outsider = _score(
+        _runner(horse="Big Outsider", current_odds="40/1", source_payload={}),
+        place_probability=0.48,
+        place_value_edge=0.2,
+        confidence=0.5,
+    )
+    credible = _score(
+        _runner(
+            horse="Credible Place",
+            current_odds="8/1",
+            source_payload={"timeform_rating": 96, "beyer": 82, "rpr": 98},
+        ),
+        place_probability=0.4,
+        place_value_edge=0.04,
+        confidence=0.62,
+    )
+
+    trial = ian_index_place_dataframe([outsider, credible])
+
+    assert trial.iloc[0]["horse"] == "Credible Place"
+    assert "outsider risk" in trial[trial["horse"].eq("Big Outsider")].iloc[0]["red_flags"]
+
+
 def test_ian_index_missing_data_lowers_confidence() -> None:
     rich = _score(
         _runner(
@@ -135,6 +159,32 @@ def test_ian_index_acca_takes_one_runner_per_race_and_requires_eight_runners() -
 
     assert acca["horse"].tolist() == ["Same Race Strong"]
     assert acca["field_size"].min() >= 8
+
+
+def test_ian_index_acca_excludes_rank_outsider_prices() -> None:
+    outsider = _score(
+        _runner(horse="Rank Outsider", current_odds="40/1", source_payload={}),
+        place_probability=0.6,
+        place_value_edge=0.25,
+        confidence=0.6,
+    )
+    sensible = _score(
+        _runner(
+            horse="Sensible Place",
+            off_time="16:30",
+            race_name="Different Race",
+            current_odds="8/1",
+            source_payload={"timeform_rating": 96, "beyer": 82, "rpr": 98},
+        ),
+        place_probability=0.4,
+        place_value_edge=0.05,
+        confidence=0.65,
+    )
+
+    acca = ian_index_acca_dataframe([outsider, sensible])
+
+    assert acca["horse"].tolist() == ["Sensible Place"]
+    assert "Rank Outsider" not in set(acca["horse"])
 
 
 def test_ian_index_adds_place_result_outcome_for_colour_coding() -> None:
