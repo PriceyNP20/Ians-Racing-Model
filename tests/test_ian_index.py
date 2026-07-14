@@ -226,6 +226,45 @@ def test_ian_index_acca_excludes_rank_outsider_prices() -> None:
     assert "Rank Outsider" not in set(acca["horse"])
 
 
+def test_ian_index_marks_extreme_prices_and_odds_on_as_watch_only() -> None:
+    extreme = _score(
+        _runner(horse="Extreme Outsider", current_odds="100/1", source_payload={}),
+        place_probability=0.6,
+        place_value_edge=0.25,
+        confidence=0.7,
+    )
+    bigger = _score(
+        _runner(horse="Huge Outsider", current_odds="250/1", source_payload={"speed_figure": 85}),
+        place_probability=0.6,
+        place_value_edge=0.25,
+        confidence=0.7,
+    )
+    odds_on = _score(
+        _runner(horse="Odds On", current_odds="1/2", source_payload={"timeform_rating": 100, "rpr": 100}),
+        place_probability=0.7,
+        place_value_edge=-0.05,
+        confidence=0.8,
+    )
+    sensible = _score(
+        _runner(
+            horse="Sensible Place",
+            current_odds="8/1",
+            source_payload={"timeform_rating": 96, "beyer": 82, "rpr": 98},
+        ),
+        place_probability=0.42,
+        place_value_edge=0.05,
+        confidence=0.68,
+    )
+
+    trial = ian_index_place_dataframe([extreme, bigger, odds_on, sensible])
+    eligibility = dict(zip(trial["horse"], trial["place_pick_eligible"], strict=True))
+
+    assert eligibility["Sensible Place"] is True
+    assert eligibility["Extreme Outsider"] is False
+    assert eligibility["Huge Outsider"] is False
+    assert eligibility["Odds On"] is False
+
+
 def test_ian_index_adds_place_result_outcome_for_colour_coding() -> None:
     placed = _score(
         _runner(horse="Placed Runner", source_payload={"result_position": 3}, field_size=12),
