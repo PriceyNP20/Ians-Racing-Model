@@ -186,7 +186,7 @@ else:
             else:
                 st.dataframe(lab_df, width="stretch", hide_index=True)
     st.dataframe(picks_tracker_style(picks_df), width="stretch", hide_index=True)
-    st.caption("Yellow means won or placed, red means lost, and blue means just missed. Unsettled rows wait for verified results.")
+    st.caption("Green highlights model selections that won or placed. All other rows remain white.")
 
 st.subheader("Outsider Last-Time Signals")
 outsider_df = outsider_last_time_dataframe(scores)
