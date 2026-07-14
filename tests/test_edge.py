@@ -5,6 +5,7 @@ from datetime import date
 import pandas as pd
 
 from ian_racing_model.domain import Runner, RunnerScore
+from ian_racing_model.acca import ew_accumulator_dataframe
 from ian_racing_model.edge_lab import (
     closing_value_dataframe,
     edge_calibration_dataframe,
@@ -81,6 +82,41 @@ def test_negative_value_flags_short_overbet_runner() -> None:
 
     assert not negative.empty
     assert "short price" in negative.iloc[0]["avoid_reason"]
+
+
+def test_ew_accumulator_uses_top_six_place_profiles() -> None:
+    scores = []
+    for index in range(8):
+        runner = _runner(
+            horse=f"Place Profile {index}",
+            current_odds="8/1",
+            recent_form="123",
+            source_payload={"speed_figure": 82 + index, "trainer_ae": 1.1},
+        )
+        scores.append(
+            RunnerScore(
+                runner,
+                60 + index,
+                0.58 + index / 100,
+                "EACH_WAY",
+                "",
+                0.08,
+                0.38 + index / 100,
+                12.5,
+                2.6,
+                0.02,
+                0.06 + index / 100,
+                [],
+                [],
+                [],
+            )
+        )
+
+    acca = ew_accumulator_dataframe(scores)
+
+    assert len(acca) == 6
+    assert acca.iloc[0]["horse"] == "Place Profile 7"
+    assert acca["acca_rank"].tolist() == [1, 2, 3, 4, 5, 6]
 
 
 def test_edge_calibration_groups_settled_picks() -> None:
