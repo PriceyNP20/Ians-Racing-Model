@@ -169,7 +169,19 @@ def _ensure_evidence_columns(df: pd.DataFrame) -> pd.DataFrame:
             ),
             axis=1,
         )
+    if "place_pick_eligible" not in df.columns:
+        df["place_pick_eligible"] = False
+    if "selection_status" not in df.columns:
+        df["selection_status"] = "WATCH_ONLY"
+    if "selection_note" not in df.columns:
+        df["selection_note"] = "Selection gate unavailable."
     return df
+
+
+def _eligible_trial_rows(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "place_pick_eligible" not in df.columns:
+        return df.iloc[0:0]
+    return df[df["place_pick_eligible"].eq(True)].copy()
 
 
 st.set_page_config(page_title="Ian Model Trial", layout="wide")
@@ -214,13 +226,17 @@ else:
             """
         )
 
-    top = trial_df.iloc[0].to_dict()
-    value_rows = trial_df[trial_df["place_value_edge"].astype(str).str.startswith("+")]
+    eligible_df = _eligible_trial_rows(trial_df)
+    signal_df = eligible_df if not eligible_df.empty else trial_df
+    top = signal_df.iloc[0].to_dict()
+    value_rows = eligible_df[eligible_df["place_value_edge"].astype(str).str.startswith("+")]
     value = value_rows.iloc[0].to_dict() if not value_rows.empty else None
-    clean_rows = trial_df[trial_df["red_flags"].eq("None")]
+    clean_rows = eligible_df[eligible_df["red_flags"].eq("None")]
     clean = clean_rows.iloc[0].to_dict() if not clean_rows.empty else None
 
     st.subheader("Trial Signals")
+    if eligible_df.empty:
+        st.warning("No runner currently passes the disciplined Ian Trial place gates, so the top card is shown for research only.")
     cols = st.columns(3)
     with cols[0]:
         _trial_card("Top Place Rating", top)
@@ -259,6 +275,8 @@ else:
             "course",
             "off_time",
             "race",
+            "selection_status",
+            "selection_note",
             "evidence_summary",
             "ability_evidence",
             "speed_evidence",
