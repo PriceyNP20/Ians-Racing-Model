@@ -4,13 +4,34 @@ from html import escape
 import sys
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from ian_racing_model.config import Settings
-from ian_racing_model.ian_index import ian_index_acca_dataframe, ian_index_place_dataframe, ian_index_weights_dataframe
+from ian_racing_model.ian_index import ian_index_place_dataframe, ian_index_weights_dataframe
+try:
+    from ian_racing_model.ian_index import ian_index_acca_dataframe
+except ImportError:
+    def ian_index_acca_dataframe(scores, limit=6):
+        trial = ian_index_place_dataframe(scores)
+        if trial.empty:
+            return trial
+        rows = []
+        used_races = set()
+        for row in trial.to_dict("records"):
+            key = (str(row.get("course", "")).lower(), str(row.get("off_time", "")).lower())
+            if key in used_races:
+                continue
+            row["acca_rank"] = len(rows) + 1
+            row["pick_type"] = "Ian Trial EW pick"
+            rows.append(row)
+            used_races.add(key)
+            if len(rows) == limit:
+                break
+        return pd.DataFrame(rows)
 from ian_racing_model.results_summary import winning_placing_selections_dataframe
 from ian_racing_model.services import get_scored_card_result
 from ian_racing_model.table_styles import research_table_style
