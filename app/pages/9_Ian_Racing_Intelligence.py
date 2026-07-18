@@ -167,7 +167,7 @@ def _api_evidence_summary(scores) -> pd.DataFrame:
                 "jockey_course_ae": payload.get("jockey_course_ae", ""),
             }
         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows).astype(str)
 
 
 def _ensure_columns(df: pd.DataFrame, defaults: dict[str, object]) -> pd.DataFrame:
