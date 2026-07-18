@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from datetime import date
 
+from ian_racing_model.analysis_engines import (
+    course_conditions_signal,
+    pace_race_shape_signal,
+    trainer_intent_signal,
+)
 from ian_racing_model.domain import Runner, RunnerScore
+from ian_racing_model.model.scoring import IanFormulaV31
 from racing_intelligence.plugins.registry import PluginRegistry
 from racing_intelligence.scoring import intelligence_dataframe
 
@@ -84,3 +90,77 @@ def test_plugin_registry_replaces_capabilities_by_name() -> None:
 
     assert registry.names() == ["racecards"]
     assert registry.get("racecards") is not None
+
+
+def test_intelligence_dataframe_exposes_three_edge_engines() -> None:
+    df = intelligence_dataframe(
+        [
+            _score(
+                runner={
+                    "horse": "Evidence Horse",
+                    "source_payload": {
+                        "pace_rating": 72,
+                        "trainer_ae": 1.2,
+                        "course_place_pct": 32,
+                    },
+                }
+            )
+        ]
+    )
+
+    assert {"pace_shape_score", "trainer_intent_score", "course_conditions_score"} <= set(df.columns)
+    assert df.iloc[0]["pace_shape_score"] > 55
+    assert df.iloc[0]["trainer_intent_score"] > 55
+    assert df.iloc[0]["course_conditions_score"] > 55
+
+
+def test_pace_race_shape_engine_does_not_invent_missing_data() -> None:
+    signal = pace_race_shape_signal(_score(runner={"draw": None, "field_size": None}).runner)
+
+    assert signal.data_quality == "missing"
+    assert signal.confidence < 0.4
+
+
+def test_trainer_intent_engine_uses_imported_trainer_indicators() -> None:
+    runner = _score(runner={"source_payload": {"trainer_ae": 1.25, "trainer_14_day_win_pct": 22}}).runner
+    signal = trainer_intent_signal(runner)
+
+    assert signal.score > 60
+    assert signal.data_quality == "ok"
+
+
+def test_course_conditions_engine_uses_history_setup_evidence() -> None:
+    runner = _score(
+        runner={
+            "course": "Beverley",
+            "distance": "1m",
+            "going": "Good",
+            "source_payload": {
+                "horse_history": [
+                    {"course": "Beverley", "distance": "1m", "going": "Good", "position": "2"}
+                ]
+            },
+        }
+    ).runner
+    signal = course_conditions_signal(runner)
+
+    assert signal.score > 60
+    assert signal.data_quality == "partial"
+
+
+def test_engines_feed_existing_weighted_components() -> None:
+    runner = _score(
+        runner={
+            "source_payload": {
+                "pace_rating": 78,
+                "trainer_ae": 1.25,
+                "course_place_pct": 34,
+            }
+        }
+    ).runner
+    score = IanFormulaV31().score_runner(runner)
+    components = {component.name: component for component in score.components}
+
+    assert components["pace_and_draw"].score > 8
+    assert components["target_race_intent"].score > 7
+    assert components["course_suitability"].score > 6
