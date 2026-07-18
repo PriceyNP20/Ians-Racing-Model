@@ -85,11 +85,11 @@ def selection_hit(row: pd.Series) -> bool:
 def _hit_type(row: pd.Series) -> str:
     pick_type = str(row.get("pick_type", "")).strip()
     outcome = str(row.get("outcome", "")).upper()
-    if pick_type in {"Winner pick", "V5 Win pick"} and outcome == "WIN":
+    if pick_type in {"Winner pick", "V5 Win pick", "V6 Win pick"} and outcome == "WIN":
         return "Winner"
-    if pick_type in {"Best EW pick", "V5 Place pick"} and outcome == "WIN":
+    if pick_type in {"Best EW pick", "V5 Place pick", "V6 Place pick"} and outcome == "WIN":
         return "EW win"
-    if pick_type in {"Best EW pick", "V5 Place pick"}:
+    if pick_type in {"Best EW pick", "V5 Place pick", "V6 Place pick"}:
         return "EW placed"
     return outcome.title()
 
