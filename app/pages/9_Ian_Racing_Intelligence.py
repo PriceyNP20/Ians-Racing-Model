@@ -26,6 +26,7 @@ from ian_racing_model.ui import (
     picks_tracker_summary,
 )
 from racing_intelligence.scoring import intelligence_dataframe
+from racing_intelligence.scoring.v5 import V5_ENGINE_WEIGHTS, V5_PLACE_WEIGHTS, V5_WIN_WEIGHTS
 
 
 def _all_tracked_picks(settings: Settings, selected_course: str) -> pd.DataFrame:
@@ -132,6 +133,35 @@ with st.expander("Plugin architecture", expanded=False):
         """
     )
 
+with st.expander("V5 engine principles", expanded=False):
+    st.markdown(
+        """
+        Version 5 scores runners through eight explainable engines. Each engine returns a score,
+        confidence, data-quality status and explanation. Missing evidence lowers confidence; it is
+        not filled in with made-up ratings.
+        """
+    )
+    weight_rows = [
+        {"engine": name.replace("_", " ").title(), "engine_weight": weight}
+        for name, weight in V5_ENGINE_WEIGHTS.items()
+    ]
+    st.dataframe(pd.DataFrame(weight_rows), width="stretch", hide_index=True)
+    st.caption(
+        "Win Index leans more towards Ability. Place Index leans more towards Suitability, "
+        "Race Shape and repeatable reliability."
+    )
+    st.dataframe(
+        pd.DataFrame(
+            {
+                "engine": [name.replace("_", " ").title() for name in V5_WIN_WEIGHTS],
+                "win_weight": list(V5_WIN_WEIGHTS.values()),
+                "place_weight": [V5_PLACE_WEIGHTS[name] for name in V5_WIN_WEIGHTS],
+            }
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+
 st.subheader("Selection Results Tracker")
 if picks_df.empty:
     st.info("No model selections are available to track for this date/course.")
@@ -178,6 +208,37 @@ if not tracked_df.empty:
 if df.empty:
     st.info("No runners are available for the selected date/course.")
 else:
+    st.subheader("V5 Place Index")
+    v5_columns = [
+        "rank",
+        "horse",
+        "course",
+        "off_time",
+        "race",
+        "odds",
+        "field_size",
+        "v5_place_index",
+        "v5_win_index",
+        "v5_recommendation",
+        "v5_confidence",
+        "v5_data_quality",
+        "ability_engine",
+        "suitability_engine",
+        "race_shape_engine",
+        "trainer_intent_engine",
+        "current_wellbeing_engine",
+        "improvement_engine",
+        "market_value_engine",
+        "historical_performance_engine",
+        "v5_explanation",
+        "_selection_hit",
+    ]
+    v5_df = df[[column for column in v5_columns if column in df.columns]].copy()
+    if not v5_df.empty:
+        v5_df = v5_df.sort_values(["v5_place_index", "v5_confidence"], ascending=[False, False])
+        v5_df["rank"] = range(1, len(v5_df) + 1)
+        st.dataframe(_intelligence_selection_style(v5_df.head(25)), width="stretch", hide_index=True)
+
     st.subheader("Value Intelligence")
     value_df = df[df["recommendation"].isin(["WIN_VALUE", "PLACE_VALUE", "PLACE_PROFILE"])].copy()
     if value_df.empty:
