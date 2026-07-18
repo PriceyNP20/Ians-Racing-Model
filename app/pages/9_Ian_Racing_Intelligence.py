@@ -28,7 +28,7 @@ from ian_racing_model.ui import (
 from racing_intelligence.scoring import intelligence_dataframe
 from racing_intelligence.scoring.v5 import V5_ENGINE_WEIGHTS, V5_PLACE_WEIGHTS, V5_WIN_WEIGHTS
 from racing_intelligence.scoring.v6 import V6_PLACE_WEIGHTS, V6_WIN_WEIGHTS, race_difficulty_dataframe, v6_dataframe
-from racing_intelligence.tracking import v5_tracker_dataframe, v5_tracker_summary
+from racing_intelligence.tracking import v5_tracker_dataframe, v5_tracker_summary, v6_tracker_dataframe, v6_tracker_summary
 
 
 def _all_tracked_picks(settings: Settings, selected_course: str) -> pd.DataFrame:
@@ -75,6 +75,30 @@ def _all_tracked_v5_picks(settings: Settings, selected_course: str) -> pd.DataFr
         if selected_course != "All UK and Irish courses":
             day_scores = [score for score in day_scores if score.runner.course == selected_course]
         day_picks = v5_tracker_dataframe(day_scores, meeting_day)
+        if not day_picks.empty:
+            all_picks.append(day_picks)
+    return pd.concat(all_picks, ignore_index=True) if all_picks else pd.DataFrame()
+
+
+def _all_tracked_v6_picks(settings: Settings, selected_course: str) -> pd.DataFrame:
+    snapshot_dates = sorted(
+        {
+            snapshot["meeting_date"]
+            for snapshot in get_model_snapshots(settings, limit=5000)
+            if snapshot.get("provider") != "mock" and snapshot.get("meeting_date")
+        }
+    )
+    if not snapshot_dates:
+        return pd.DataFrame()
+
+    all_picks = []
+    for meeting_date_iso in snapshot_dates:
+        meeting_day = date.fromisoformat(meeting_date_iso)
+        day_result = get_scored_card_result(meeting_day, None, settings)
+        day_scores = day_result.scores
+        if selected_course != "All UK and Irish courses":
+            day_scores = [score for score in day_scores if score.runner.course == selected_course]
+        day_picks = v6_tracker_dataframe(day_scores, meeting_day)
         if not day_picks.empty:
             all_picks.append(day_picks)
     return pd.concat(all_picks, ignore_index=True) if all_picks else pd.DataFrame()
@@ -179,12 +203,16 @@ picks_df = picks_tracker_dataframe(scores)
 if not picks_df.empty:
     picks_df.insert(0, "meeting_date", selected_date.isoformat())
 v5_picks_df = v5_tracker_dataframe(scores, selected_date)
+v6_picks_df = v6_tracker_dataframe(scores, selected_date)
 tracked_df = _all_tracked_picks(settings, selected_course)
 if tracked_df.empty and not picks_df.empty:
     tracked_df = picks_df.copy()
 tracked_v5_df = _all_tracked_v5_picks(settings, selected_course)
 if tracked_v5_df.empty and not v5_picks_df.empty:
     tracked_v5_df = v5_picks_df.copy()
+tracked_v6_df = _all_tracked_v6_picks(settings, selected_course)
+if tracked_v6_df.empty and not v6_picks_df.empty:
+    tracked_v6_df = v6_picks_df.copy()
 df = _add_selection_outcomes(df, picks_df)
 
 st.subheader("Platform Status")
@@ -340,6 +368,35 @@ if not tracked_v5_df.empty:
             st.info("No cumulative V5 winning or placing selections have been matched yet.")
         else:
             st.dataframe(picks_tracker_style(all_v5_hits), width="stretch", hide_index=True)
+
+st.subheader("V6 Results Tracker")
+if v6_picks_df.empty:
+    st.info("No V6 selections are available to track for this date/course.")
+else:
+    v6_summary = v6_tracker_summary(v6_picks_df)
+    v6_settled = v6_picks_df[~v6_picks_df["outcome"].eq("Awaiting result")]
+    v6_hits = winning_placing_selections_dataframe(v6_picks_df)
+    v6_cols = st.columns(4)
+    v6_cols[0].metric("V6 settled today", f"{len(v6_settled)}")
+    v6_cols[1].metric("V6 winning / placing today", f"{len(v6_hits)}")
+    v6_cols[2].metric("V6 Win Index hit rate", v6_summary["v6_win_rate"])
+    v6_cols[3].metric("V6 Place Index hit rate", v6_summary["v6_place_rate"])
+    st.dataframe(picks_tracker_style(v6_picks_df), width="stretch", hide_index=True)
+
+if not tracked_v6_df.empty:
+    all_v6_hits = winning_placing_selections_dataframe(tracked_v6_df)
+    all_v6_settled = tracked_v6_df[~tracked_v6_df["outcome"].eq("Awaiting result")]
+    all_v6_summary = v6_tracker_summary(tracked_v6_df)
+    v6_all_cols = st.columns(4)
+    v6_all_cols[0].metric("V6 days tracked", f"{tracked_v6_df['meeting_date'].nunique()}")
+    v6_all_cols[1].metric("V6 settled all-time", f"{len(all_v6_settled)}")
+    v6_all_cols[2].metric("V6 Win Index all-time", all_v6_summary["v6_win_rate"])
+    v6_all_cols[3].metric("V6 Place Index all-time", all_v6_summary["v6_place_rate"])
+    with st.expander("Cumulative V6 winning / placing selections", expanded=False):
+        if all_v6_hits.empty:
+            st.info("No cumulative V6 winning or placing selections have been matched yet.")
+        else:
+            st.dataframe(picks_tracker_style(all_v6_hits), width="stretch", hide_index=True)
 
 if df.empty:
     st.info("No runners are available for the selected date/course.")
