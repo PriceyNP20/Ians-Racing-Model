@@ -18,6 +18,7 @@ from racing_intelligence.scoring.v5 import (
     v5_analysis,
     validate_v5_weights,
 )
+from racing_intelligence.tracking import v5_tracker_dataframe, v5_tracker_summary
 
 
 def _score(**overrides) -> RunnerScore:
@@ -89,6 +90,27 @@ def test_intelligence_can_show_place_value_without_win_value() -> None:
     row = df.iloc[0]
     assert row["recommendation"] in {"PLACE_VALUE", "PLACE_PROFILE"}
     assert row["place_value_edge"].startswith("+")
+
+
+def test_v5_tracker_separates_win_and_place_results() -> None:
+    tracker = v5_tracker_dataframe(
+        [
+            _score(
+                runner={
+                    "horse": "Placed Runner",
+                    "field_size": 12,
+                    "source_payload": {"result_position": 2},
+                }
+            )
+        ],
+        date(2026, 7, 14),
+    )
+
+    summary = v5_tracker_summary(tracker)
+
+    assert set(tracker["pick_type"]) == {"V5 Win pick", "V5 Place pick"}
+    assert summary["v5_win_rate"] == "0.0% (0/1)"
+    assert summary["v5_place_rate"] == "100.0% (1/1)"
 
 
 def test_plugin_registry_replaces_capabilities_by_name() -> None:
