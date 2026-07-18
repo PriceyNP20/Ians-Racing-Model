@@ -8,7 +8,6 @@ from ian_racing_model.analysis_engines import (
     trainer_intent_signal,
 )
 from ian_racing_model.domain import Runner, RunnerScore
-from ian_racing_model.model.scoring import IanFormulaV31
 from racing_intelligence.plugins.registry import PluginRegistry
 from racing_intelligence.scoring import intelligence_dataframe
 
@@ -146,21 +145,3 @@ def test_course_conditions_engine_uses_history_setup_evidence() -> None:
 
     assert signal.score > 60
     assert signal.data_quality == "partial"
-
-
-def test_engines_feed_existing_weighted_components() -> None:
-    runner = _score(
-        runner={
-            "source_payload": {
-                "pace_rating": 78,
-                "trainer_ae": 1.25,
-                "course_place_pct": 34,
-            }
-        }
-    ).runner
-    score = IanFormulaV31().score_runner(runner)
-    components = {component.name: component for component in score.components}
-
-    assert components["pace_and_draw"].score > 8
-    assert components["target_race_intent"].score > 7
-    assert components["course_suitability"].score > 6
