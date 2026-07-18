@@ -70,6 +70,33 @@ THE_RACING_API_CONFIG = {
     "horse_results_endpoint": get_setting(
         "RACING_API_HORSE_RESULTS_ENDPOINT", "/horses/{horse_id}/results"
     ),
+    "horse_profile_endpoint": get_setting(
+        "RACING_API_HORSE_PROFILE_ENDPOINT", "/horses/{horse_id}/pro"
+    ),
+    "odds_endpoint": get_setting("RACING_API_ODDS_ENDPOINT", "/odds/{race_id}/{horse_id}"),
+    "trainer_course_analysis_endpoint": get_setting(
+        "RACING_API_TRAINER_COURSE_ANALYSIS_ENDPOINT",
+        "/trainers/{trainer_id}/analysis/courses",
+    ),
+    "trainer_distance_analysis_endpoint": get_setting(
+        "RACING_API_TRAINER_DISTANCE_ANALYSIS_ENDPOINT",
+        "/trainers/{trainer_id}/analysis/distances",
+    ),
+    "trainer_jockey_analysis_endpoint": get_setting(
+        "RACING_API_TRAINER_JOCKEY_ANALYSIS_ENDPOINT",
+        "/trainers/{trainer_id}/analysis/jockeys",
+    ),
+    "jockey_course_analysis_endpoint": get_setting(
+        "RACING_API_JOCKEY_COURSE_ANALYSIS_ENDPOINT",
+        "/jockeys/{jockey_id}/analysis/courses",
+    ),
+    "jockey_trainer_analysis_endpoint": get_setting(
+        "RACING_API_JOCKEY_TRAINER_ANALYSIS_ENDPOINT",
+        "/jockeys/{jockey_id}/analysis/trainers",
+    ),
+    "v5_evidence_enabled": get_setting("RACING_API_V5_EVIDENCE_ENABLED", "true"),
+    "v5_evidence_max_runners": get_int_setting("RACING_API_V5_EVIDENCE_MAX_RUNNERS", 40),
+    "v5_evidence_delay_seconds": get_float_setting("RACING_API_V5_EVIDENCE_DELAY_SECONDS", 0.25),
     "horse_history_limit": get_int_setting("RACING_API_HORSE_HISTORY_LIMIT", 6),
     "horse_history_max_runners": get_int_setting("RACING_API_HORSE_HISTORY_MAX_RUNNERS", 40),
     "horse_history_delay_seconds": get_float_setting(
