@@ -15,3 +15,33 @@ place_index:
   class_fit: 10
   trainer_jockey: 10
   market_value: 5
+
+v5_engine_weights:
+  ability: 20
+  suitability: 20
+  race_shape: 15
+  trainer_intent: 10
+  current_wellbeing: 10
+  improvement_potential: 10
+  market_value: 10
+  historical_performance: 5
+
+v5_win_index:
+  ability: 25
+  suitability: 15
+  race_shape: 15
+  trainer_intent: 12
+  current_wellbeing: 12
+  improvement_potential: 10
+  market_value: 8
+  historical_performance: 3
+
+v5_place_index:
+  ability: 15
+  suitability: 25
+  race_shape: 18
+  trainer_intent: 8
+  current_wellbeing: 12
+  improvement_potential: 10
+  market_value: 7
+  historical_performance: 5
