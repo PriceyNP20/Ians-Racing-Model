@@ -26,7 +26,12 @@ from racing_intelligence.scoring.v6 import (
     v6_dataframe,
     validate_v6_weights,
 )
-from racing_intelligence.tracking import v5_tracker_dataframe, v5_tracker_summary
+from racing_intelligence.tracking import (
+    v5_tracker_dataframe,
+    v5_tracker_summary,
+    v6_tracker_dataframe,
+    v6_tracker_summary,
+)
 
 
 def _score(**overrides) -> RunnerScore:
@@ -119,6 +124,27 @@ def test_v5_tracker_separates_win_and_place_results() -> None:
     assert set(tracker["pick_type"]) == {"V5 Win pick", "V5 Place pick"}
     assert summary["v5_win_rate"] == "0.0% (0/1)"
     assert summary["v5_place_rate"] == "100.0% (1/1)"
+
+
+def test_v6_tracker_separates_win_and_place_results() -> None:
+    tracker = v6_tracker_dataframe(
+        [
+            _score(
+                runner={
+                    "horse": "Placed V6 Runner",
+                    "field_size": 12,
+                    "source_payload": {"result_position": 2},
+                }
+            )
+        ],
+        date(2026, 7, 14),
+    )
+
+    summary = v6_tracker_summary(tracker)
+
+    assert set(tracker["pick_type"]) == {"V6 Win pick", "V6 Place pick"}
+    assert summary["v6_win_rate"] == "0.0% (0/1)"
+    assert summary["v6_place_rate"] == "100.0% (1/1)"
 
 
 def test_plugin_registry_replaces_capabilities_by_name() -> None:
