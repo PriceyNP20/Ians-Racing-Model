@@ -8,8 +8,16 @@ from ian_racing_model.analysis_engines import (
     trainer_intent_signal,
 )
 from ian_racing_model.domain import Runner, RunnerScore
+from ian_racing_model.model.scoring import IanFormulaV31
 from racing_intelligence.plugins.registry import PluginRegistry
 from racing_intelligence.scoring import intelligence_dataframe
+from racing_intelligence.scoring.v5 import (
+    V5_ENGINE_WEIGHTS,
+    V5_PLACE_WEIGHTS,
+    V5_WIN_WEIGHTS,
+    v5_analysis,
+    validate_v5_weights,
+)
 
 
 def _score(**overrides) -> RunnerScore:
@@ -145,3 +153,127 @@ def test_course_conditions_engine_uses_history_setup_evidence() -> None:
 
     assert signal.score > 60
     assert signal.data_quality == "partial"
+
+
+def test_engines_feed_existing_weighted_components() -> None:
+    runner = _score(
+        runner={
+            "source_payload": {
+                "pace_rating": 78,
+                "trainer_ae": 1.25,
+                "course_place_pct": 34,
+            }
+        }
+    ).runner
+    score = IanFormulaV31().score_runner(runner)
+    components = {component.name: component for component in score.components}
+
+    assert components["pace_and_draw"].score > 8
+    assert components["target_race_intent"].score > 7
+    assert components["course_suitability"].score > 6
+
+
+def test_v5_weight_sets_total_100_and_separate_win_place_logic() -> None:
+    validate_v5_weights()
+
+    assert sum(V5_ENGINE_WEIGHTS.values()) == 100
+    assert sum(V5_WIN_WEIGHTS.values()) == 100
+    assert sum(V5_PLACE_WEIGHTS.values()) == 100
+    assert V5_WIN_WEIGHTS != V5_PLACE_WEIGHTS
+    assert V5_PLACE_WEIGHTS["suitability"] > V5_WIN_WEIGHTS["suitability"]
+    assert V5_WIN_WEIGHTS["ability"] > V5_PLACE_WEIGHTS["ability"]
+
+
+def test_v5_returns_distinct_win_and_place_indexes() -> None:
+    score = _score(
+        total_score=62,
+        runner={
+            "source_payload": {
+                "official_rating": 78,
+                "pace_rating": 70,
+                "trainer_ae": 1.15,
+                "course_place_pct": 45,
+                "going_place_pct": 42,
+                "distance_place_pct": 40,
+                "horse_history": [
+                    {"course": "Beverley", "distance": "1m", "going": "Good", "position": "2"},
+                    {"course": "Beverley", "distance": "1m", "going": "Good", "position": "3"},
+                ],
+            }
+        },
+    )
+
+    analysis = v5_analysis(score)
+
+    assert analysis.place_index != analysis.win_index
+    assert analysis.place_index > analysis.win_index
+    assert analysis.engines["suitability"].score > 60
+
+
+def test_v5_missing_data_lowers_confidence_without_inventing() -> None:
+    analysis = v5_analysis(
+        _score(
+            confidence=0.4,
+            win_value_edge=None,
+            place_value_edge=None,
+            runner={
+                "draw": None,
+                "field_size": None,
+                "official_rating": None,
+                "recent_form": None,
+                "current_odds": None,
+                "source_payload": {},
+            },
+        )
+    )
+
+    assert analysis.confidence < 0.5
+    assert analysis.data_quality == "partial"
+    assert any(signal.data_quality == "missing" for signal in analysis.engines.values())
+
+
+def test_v5_score_outputs_remain_between_0_and_100() -> None:
+    analysis = v5_analysis(
+        _score(
+            total_score=99,
+            runner={
+                "current_odds": "100/1",
+                "source_payload": {
+                    "timeform_rating": 180,
+                    "pace_rating": 130,
+                    "trainer_ae": 2.5,
+                    "course_place_pct": 90,
+                    "career_starts": 2,
+                    "first_handicap": True,
+                },
+            },
+        )
+    )
+
+    assert 0 <= analysis.win_index <= 100
+    assert 0 <= analysis.place_index <= 100
+    for signal in analysis.engines.values():
+        assert 0 <= signal.score <= 100
+
+
+def test_intelligence_dataframe_exposes_v5_engine_audit_columns() -> None:
+    df = intelligence_dataframe([_score(runner={"horse": "V5 Audit"})])
+
+    expected = {
+        "v5_win_index",
+        "v5_place_index",
+        "v5_recommendation",
+        "v5_confidence",
+        "v5_data_quality",
+        "ability_engine",
+        "suitability_engine",
+        "race_shape_engine",
+        "trainer_intent_engine",
+        "current_wellbeing_engine",
+        "improvement_engine",
+        "market_value_engine",
+        "historical_performance_engine",
+        "v5_explanation",
+    }
+
+    assert expected <= set(df.columns)
