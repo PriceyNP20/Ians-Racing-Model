@@ -8,6 +8,7 @@ import pandas as pd
 from ian_racing_model.analysis_engines import engine_signal_map
 from ian_racing_model.domain import RunnerScore
 from racing_intelligence.domain import IntelligenceRunner, ProbabilityAssessment
+from racing_intelligence.scoring.v5 import v5_analysis
 
 
 def analyse_scores(scores: list[RunnerScore]) -> list[IntelligenceRunner]:
@@ -52,7 +53,9 @@ def intelligence_dataframe(scores: list[RunnerScore]) -> pd.DataFrame:
         for score in scores
     }
     for item in analysed:
-        signals = engine_signal_map(score_lookup[(item.course, item.off_time, item.race, item.horse)])
+        source_score = score_lookup[(item.course, item.off_time, item.race, item.horse)]
+        signals = engine_signal_map(source_score)
+        v5 = v5_analysis(source_score)
         rows.append(
             {
                 "course": item.course,
@@ -68,15 +71,37 @@ def intelligence_dataframe(scores: list[RunnerScore]) -> pd.DataFrame:
                 "win_value_edge": _format_edge(item.win_value_edge),
                 "place_value_edge": _format_edge(item.place_value_edge),
                 "recommendation": item.recommendation,
+                "v5_win_index": v5.win_index,
+                "v5_place_index": v5.place_index,
+                "v5_recommendation": v5.recommendation,
+                "v5_confidence": v5.confidence,
+                "v5_data_quality": v5.data_quality,
                 "pace_shape_score": signals["pace_race_shape"].score,
                 "trainer_intent_score": signals["trainer_intent"].score,
                 "course_conditions_score": signals["course_conditions"].score,
+                "ability_engine": v5.engines["ability"].score,
+                "suitability_engine": v5.engines["suitability"].score,
+                "race_shape_engine": v5.engines["race_shape"].score,
+                "trainer_intent_engine": v5.engines["trainer_intent"].score,
+                "current_wellbeing_engine": v5.engines["current_wellbeing"].score,
+                "improvement_engine": v5.engines["improvement_potential"].score,
+                "market_value_engine": v5.engines["market_value"].score,
+                "historical_performance_engine": v5.engines["historical_performance"].score,
                 "data_quality": item.data_quality,
                 "win_explanation": item.win.explanation,
                 "place_explanation": item.place.explanation,
                 "pace_shape": signals["pace_race_shape"].explanation,
                 "trainer_intent": signals["trainer_intent"].explanation,
                 "course_conditions": signals["course_conditions"].explanation,
+                "v5_explanation": "; ".join(
+                    [
+                        v5.engines["ability"].explanation,
+                        v5.engines["suitability"].explanation,
+                        v5.engines["race_shape"].explanation,
+                        v5.engines["trainer_intent"].explanation,
+                        v5.engines["improvement_potential"].explanation,
+                    ]
+                ),
                 "warnings": "; ".join(item.warnings[:3]) if item.warnings else "None",
                 "_win_probability": item.win.probability,
                 "_place_probability": item.place.probability,
@@ -96,7 +121,8 @@ def intelligence_dataframe(scores: list[RunnerScore]) -> pd.DataFrame:
 
 def _win_assessment(score: RunnerScore, race_scores: list[RunnerScore], signals: dict[str, Any]) -> ProbabilityAssessment:
     probability = score.win_probability or _normalised_probability(score.total_score, race_scores)
-    probability = max(0.001, min(0.85, probability * _engine_probability_factor(signals, mode="win")))
+    engine_factor = _engine_probability_factor(signals, mode="win")
+    probability = max(0.001, min(0.85, probability * engine_factor))
     confidence = min(0.95, max(0.05, score.confidence))
     quality = "ok" if score.win_probability else "partial"
     return ProbabilityAssessment(
@@ -113,7 +139,8 @@ def _place_assessment(score: RunnerScore, race_scores: list[RunnerScore], signal
     place_slots = _place_slots(field_size)
     base = score.place_probability or min(0.9, (score.win_probability or 0.05) * place_slots * 0.9)
     reliability = _place_reliability(score)
-    probability = max(0.01, min(0.92, base * reliability * _engine_probability_factor(signals, mode="place")))
+    engine_factor = _engine_probability_factor(signals, mode="place")
+    probability = max(0.01, min(0.92, base * reliability * engine_factor))
     confidence = min(0.95, max(0.05, score.confidence * reliability * _engine_confidence_factor(signals)))
     quality = "ok" if score.place_probability else "partial"
     return ProbabilityAssessment(
