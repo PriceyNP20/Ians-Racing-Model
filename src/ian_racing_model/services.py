@@ -132,6 +132,7 @@ def _load_scored_card_result(
         _store_raw(settings, meeting_date, course, raw)
         _record_refresh(settings, meeting_date, course, "racecard", "success")
         runners = _attach_horse_history(provider, settings, meeting_date, course, runners)
+        runners = _attach_v5_evidence(provider, settings, meeting_date, course, runners)
         _store_pre_result_snapshots(settings, settings.provider, scorer.score_runners(runners))
         runners, results_imported = _attach_results(provider, settings, meeting_date, course, runners)
         return ScoredCardResult(
@@ -298,6 +299,102 @@ def _attach_horse_history(
     return merged
 
 
+def _attach_v5_evidence(
+    provider,
+    settings: Settings,
+    meeting_date: date,
+    course: str | None,
+    runners: list[Runner],
+) -> list[Runner]:
+    if settings.provider.lower() == "mock":
+        return runners
+    if str(THE_RACING_API_CONFIG.get("v5_evidence_enabled", "true")).lower() not in {"1", "true", "yes", "y"}:
+        return runners
+
+    max_runners = int(THE_RACING_API_CONFIG.get("v5_evidence_max_runners", 40))
+    delay_seconds = _v5_evidence_delay()
+    merged: list[Runner] = []
+    raw_audit: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    fetched_count = 0
+
+    calls = (
+        ("odds_history", provider.fetch_odds_history),
+        ("horse_profile", provider.fetch_horse_profile),
+        ("trainer_course_analysis", provider.fetch_trainer_course_analysis),
+        ("trainer_distance_analysis", provider.fetch_trainer_distance_analysis),
+        ("trainer_jockey_analysis", provider.fetch_trainer_jockey_analysis),
+        ("jockey_course_analysis", provider.fetch_jockey_course_analysis),
+        ("jockey_trainer_analysis", provider.fetch_jockey_trainer_analysis),
+    )
+
+    for index, runner in enumerate(runners):
+        if runner.is_non_runner or index >= max_runners:
+            merged.append(runner)
+            continue
+        evidence: dict[str, Any] = {}
+        for source, fetcher in calls:
+            if delay_seconds and fetched_count:
+                time.sleep(delay_seconds)
+            try:
+                payload = fetcher(runner)
+                fetched_count += 1
+            except Exception as exc:
+                errors.append(
+                    {
+                        "horse": runner.horse,
+                        "source": source,
+                        "error": type(exc).__name__,
+                        "message": str(exc),
+                    }
+                )
+                continue
+            if payload:
+                evidence[source] = payload
+
+        if not evidence:
+            merged.append(runner)
+            continue
+
+        derived = _derive_v5_evidence(runner, evidence)
+        raw_audit.append({"horse": runner.horse, "evidence": evidence})
+        merged.append(
+            replace(
+                runner,
+                source_payload={
+                    **runner.source_payload,
+                    "v5_requested_evidence": sorted(evidence),
+                    "v5_evidence_raw": evidence,
+                    **derived,
+                },
+            )
+        )
+
+    if raw_audit:
+        _store_raw(settings, meeting_date, course, {"v5_evidence": raw_audit})
+        _record_refresh(
+            settings,
+            meeting_date,
+            course,
+            "v5_evidence",
+            "success",
+            f"{len(raw_audit)} runner evidence bundles refreshed",
+        )
+    if errors:
+        _store_raw(settings, meeting_date, course, {"source": "v5_evidence", "errors": errors})
+        _record_refresh(
+            settings,
+            meeting_date,
+            course,
+            "v5_evidence",
+            "partial",
+            f"{len(errors)} V5 evidence errors",
+        )
+    if not raw_audit and not errors:
+        _record_refresh(settings, meeting_date, course, "v5_evidence", "empty")
+    return merged
+
+
 def _flatten_horse_history(raw: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(raw, dict):
         return []
@@ -315,6 +412,142 @@ def _history_delay(settings: Settings) -> float:
         return float(THE_RACING_API_CONFIG.get("horse_history_delay_seconds", 0.25))
     except (TypeError, ValueError):
         return 0.25
+
+
+def _v5_evidence_delay() -> float:
+    try:
+        return float(THE_RACING_API_CONFIG.get("v5_evidence_delay_seconds", 0.25))
+    except (TypeError, ValueError):
+        return 0.25
+
+
+def _derive_v5_evidence(runner: Runner, evidence: dict[str, Any]) -> dict[str, Any]:
+    derived: dict[str, Any] = {}
+    odds = evidence.get("odds_history")
+    opening = _opening_odds_from_api(odds)
+    if opening is not None:
+        derived["opening_odds_decimal"] = opening
+        derived["odds_history"] = odds.get("odds") if isinstance(odds, dict) else odds
+
+    trainer_course = _best_analysis_row(evidence.get("trainer_course_analysis"), "courses", "course", runner.course)
+    trainer_distance = _best_analysis_row(evidence.get("trainer_distance_analysis"), "distances", "dist", runner.distance)
+    trainer_jockey = _best_analysis_row(evidence.get("trainer_jockey_analysis"), "jockeys", "jockey", runner.jockey)
+    jockey_course = _best_analysis_row(evidence.get("jockey_course_analysis"), "courses", "course", runner.course)
+    jockey_trainer = _best_analysis_row(evidence.get("jockey_trainer_analysis"), "trainers", "trainer", runner.trainer)
+
+    for prefix, row in (
+        ("trainer_course", trainer_course),
+        ("trainer_distance", trainer_distance),
+        ("trainer_jockey", trainer_jockey),
+        ("jockey_course", jockey_course),
+        ("jockey_trainer", jockey_trainer),
+    ):
+        if row:
+            derived[f"{prefix}_win_pct"] = _analysis_percent(row.get("win_%"))
+            derived[f"{prefix}_ae"] = _analysis_float(row.get("a/e"))
+            derived[f"{prefix}_runners"] = row.get("runners") or row.get("rides")
+
+    trainer_ae_values = [
+        value
+        for value in (
+            derived.get("trainer_course_ae"),
+            derived.get("trainer_distance_ae"),
+            derived.get("trainer_jockey_ae"),
+        )
+        if value is not None
+    ]
+    trainer_pct_values = [
+        value
+        for value in (
+            derived.get("trainer_course_win_pct"),
+            derived.get("trainer_distance_win_pct"),
+            derived.get("trainer_jockey_win_pct"),
+        )
+        if value is not None
+    ]
+    if trainer_ae_values:
+        derived["trainer_ae"] = round(sum(trainer_ae_values) / len(trainer_ae_values), 3)
+    if trainer_pct_values:
+        derived["trainer_win_pct"] = round(sum(trainer_pct_values) / len(trainer_pct_values), 2)
+    if jockey_course:
+        derived["jockey_course_win_pct"] = _analysis_percent(jockey_course.get("win_%"))
+        derived["jockey_course_ae"] = _analysis_float(jockey_course.get("a/e"))
+    if jockey_trainer:
+        derived["jockey_trainer_win_pct"] = _analysis_percent(jockey_trainer.get("win_%"))
+        derived["jockey_trainer_ae"] = _analysis_float(jockey_trainer.get("a/e"))
+
+    return {key: value for key, value in derived.items() if value not in (None, "", [])}
+
+
+def _opening_odds_from_api(payload: Any) -> float | None:
+    if not isinstance(payload, dict):
+        return None
+    rows = payload.get("odds")
+    if not isinstance(rows, list):
+        return None
+    for bookmaker in rows:
+        if not isinstance(bookmaker, dict):
+            continue
+        history = bookmaker.get("history")
+        if isinstance(history, list) and history:
+            first = history[0]
+            if isinstance(first, dict):
+                odds = _decimal_odds(first.get("decimal") or first.get("fractional"))
+                if odds is not None:
+                    return odds
+        odds = _decimal_odds(bookmaker.get("decimal") or bookmaker.get("fractional"))
+        if odds is not None:
+            return odds
+    return None
+
+
+def _best_analysis_row(payload: Any, collection: str, label_key: str, expected: str | None) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    rows = payload.get(collection)
+    if not isinstance(rows, list):
+        return None
+    expected_text = _normalise(str(expected or ""))
+    if expected_text:
+        for row in rows:
+            if isinstance(row, dict) and _normalise(str(row.get(label_key) or "")) == expected_text:
+                return row
+    return rows[0] if rows and isinstance(rows[0], dict) else None
+
+
+def _analysis_percent(value: Any) -> float | None:
+    number = _analysis_float(value)
+    if number is None:
+        return None
+    return round(number * 100, 2) if number <= 1 else round(number, 2)
+
+
+def _analysis_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(str(value).strip().replace("%", ""))
+    except ValueError:
+        return None
+
+
+def _decimal_odds(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if "/" in text:
+        num, den = text.split("/", 1)
+        try:
+            denominator = float(den)
+            if denominator == 0:
+                return None
+            return float(num) / denominator + 1.0
+        except ValueError:
+            return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
 
 
 def _flatten_results(raw: dict[str, Any]) -> list[dict[str, Any]]:
