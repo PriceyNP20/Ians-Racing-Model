@@ -27,6 +27,7 @@ from ian_racing_model.ui import (
 )
 from racing_intelligence.scoring import intelligence_dataframe
 from racing_intelligence.scoring.v5 import V5_ENGINE_WEIGHTS, V5_PLACE_WEIGHTS, V5_WIN_WEIGHTS
+from racing_intelligence.scoring.v6 import V6_PLACE_WEIGHTS, V6_WIN_WEIGHTS, race_difficulty_dataframe, v6_dataframe
 from racing_intelligence.tracking import v5_tracker_dataframe, v5_tracker_summary
 
 
@@ -248,6 +249,26 @@ with st.expander("V5 engine principles", expanded=False):
         hide_index=True,
     )
 
+with st.expander("V6 engine principles", expanded=False):
+    st.markdown(
+        """
+        Version 6 separates horse profile, pace, course, distance, going, handicap position,
+        trainer intent, wellbeing, improvement and market value. It also grades each race
+        from A to D so weak races are not treated the same as clearer betting puzzles.
+        """
+    )
+    st.dataframe(
+        pd.DataFrame(
+            {
+                "engine": [name.replace("_", " ").title() for name in V6_WIN_WEIGHTS],
+                "win_weight": list(V6_WIN_WEIGHTS.values()),
+                "place_weight": [V6_PLACE_WEIGHTS[name] for name in V6_WIN_WEIGHTS],
+            }
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+
 st.subheader("Selection Results Tracker")
 if picks_df.empty:
     st.info("No model selections are available to track for this date/course.")
@@ -366,6 +387,47 @@ else:
         st.dataframe(_intelligence_selection_style(v5_df.head(25)), width="stretch", hide_index=True)
         if v5_df["v5_place_index"].eq(0).all():
             st.warning("V5 score columns were not available in this run. Refresh again after Streamlit finishes rebuilding.")
+
+    st.subheader("V6 Intelligence Dashboard")
+    difficulty_df = race_difficulty_dataframe(scores)
+    if difficulty_df.empty:
+        st.info("No V6 race difficulty grades are available for this date/course.")
+    else:
+        st.caption("Race difficulty: A = clearer edge race; D = highly unpredictable unless value is exceptional.")
+        st.dataframe(difficulty_df, width="stretch", hide_index=True)
+
+    v6_df = v6_dataframe(scores)
+    if v6_df.empty:
+        st.info("No V6 runner ratings are available for this date/course.")
+    else:
+        v6_cols = [
+            "v6_rank",
+            "horse",
+            "course",
+            "off_time",
+            "race",
+            "odds",
+            "field_size",
+            "race_difficulty",
+            "v6_place_index",
+            "v6_win_index",
+            "v6_confidence",
+            "v6_recommendation",
+            "v6_data_quality",
+            "ability",
+            "horse_profile",
+            "pace_race_shape",
+            "course_suitability",
+            "distance_suitability",
+            "going_suitability",
+            "handicap_position",
+            "trainer_intent",
+            "current_wellbeing",
+            "improvement_potential",
+            "market_value",
+            "v6_explanation",
+        ]
+        st.dataframe(v6_df[[column for column in v6_cols if column in v6_df.columns]].head(30), width="stretch", hide_index=True)
 
     st.subheader("Value Intelligence")
     value_df = df[df["recommendation"].isin(["WIN_VALUE", "PLACE_VALUE", "PLACE_PROFILE"])].copy()
