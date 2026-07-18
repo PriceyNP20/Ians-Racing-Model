@@ -88,6 +88,46 @@ def _add_selection_outcomes(intelligence_df: pd.DataFrame, picks_df: pd.DataFram
     return merged
 
 
+def _source_payload(score) -> dict:
+    payload = getattr(score.runner, "source_payload", None)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _api_evidence_summary(scores) -> pd.DataFrame:
+    rows = []
+    for score in scores:
+        payload = _source_payload(score)
+        requested = payload.get("v5_requested_evidence") or []
+        if not isinstance(requested, list):
+            requested = []
+        rows.append(
+            {
+                "horse": score.runner.horse,
+                "course": score.runner.course,
+                "off_time": score.runner.off_time,
+                "race": score.runner.race_name,
+                "race_id": payload.get("race_id", ""),
+                "horse_id": payload.get("horse_id", ""),
+                "trainer_id": payload.get("trainer_id", ""),
+                "jockey_id": payload.get("jockey_id", ""),
+                "api_evidence_sources": ", ".join(requested) if requested else "Not requested / unavailable",
+                "opening_odds_decimal": payload.get("opening_odds_decimal", ""),
+                "trainer_ae": payload.get("trainer_ae", ""),
+                "trainer_win_pct": payload.get("trainer_win_pct", ""),
+                "jockey_course_ae": payload.get("jockey_course_ae", ""),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _ensure_columns(df: pd.DataFrame, defaults: dict[str, object]) -> pd.DataFrame:
+    safe = df.copy()
+    for column, default in defaults.items():
+        if column not in safe.columns:
+            safe[column] = default
+    return safe
+
+
 st.set_page_config(page_title="Ian Racing Intelligence", layout="wide")
 st.title("Ian Racing Intelligence Platform")
 st.caption(
@@ -123,6 +163,23 @@ cols[0].metric("Runners analysed", len(df))
 cols[1].metric("Win value signals", 0 if df.empty else int(df["recommendation"].eq("WIN_VALUE").sum()))
 cols[2].metric("Place value signals", 0 if df.empty else int(df["recommendation"].eq("PLACE_VALUE").sum()))
 cols[3].metric("Data source", result.provider)
+
+evidence_df = _api_evidence_summary(scores)
+evidence_requested = (
+    0
+    if evidence_df.empty
+    else int((~evidence_df["api_evidence_sources"].eq("Not requested / unavailable")).sum())
+)
+with st.expander("API evidence requested", expanded=False):
+    st.caption(
+        "This confirms whether the model is asking The Racing API for the richer V5 inputs: "
+        "horse profile, odds history, trainer course/distance/jockey analysis and jockey course/trainer analysis."
+    )
+    st.metric("Runner evidence bundles", evidence_requested)
+    if evidence_df.empty:
+        st.info("No runners are available to check.")
+    else:
+        st.dataframe(evidence_df.head(80), width="stretch", hide_index=True)
 
 with st.expander("Plugin architecture", expanded=False):
     st.markdown(
@@ -234,10 +291,23 @@ else:
         "_selection_hit",
     ]
     v5_df = df[[column for column in v5_columns if column in df.columns]].copy()
+    v5_df = _ensure_columns(
+        v5_df,
+        {
+            "v5_place_index": 0.0,
+            "v5_win_index": 0.0,
+            "v5_confidence": 0.0,
+            "v5_recommendation": "Unavailable",
+            "v5_data_quality": "missing",
+            "_selection_hit": False,
+        },
+    )
     if not v5_df.empty:
         v5_df = v5_df.sort_values(["v5_place_index", "v5_confidence"], ascending=[False, False])
         v5_df["rank"] = range(1, len(v5_df) + 1)
         st.dataframe(_intelligence_selection_style(v5_df.head(25)), width="stretch", hide_index=True)
+        if v5_df["v5_place_index"].eq(0).all():
+            st.warning("V5 score columns were not available in this run. Refresh again after Streamlit finishes rebuilding.")
 
     st.subheader("Value Intelligence")
     value_df = df[df["recommendation"].isin(["WIN_VALUE", "PLACE_VALUE", "PLACE_PROFILE"])].copy()
