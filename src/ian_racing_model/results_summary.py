@@ -75,7 +75,7 @@ def daily_winning_placing_summary_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 def selection_hit(row: pd.Series) -> bool:
     outcome = str(row.get("outcome", "")).upper()
     pick_type = str(row.get("pick_type", row.get("pick", ""))).strip().lower()
-    if "winner" in pick_type:
+    if "winner" in pick_type or "win pick" in pick_type:
         return outcome == "WIN"
     if "ew" in pick_type or "place" in pick_type:
         return outcome in {"WIN", "PLACED"}
@@ -85,11 +85,11 @@ def selection_hit(row: pd.Series) -> bool:
 def _hit_type(row: pd.Series) -> str:
     pick_type = str(row.get("pick_type", "")).strip()
     outcome = str(row.get("outcome", "")).upper()
-    if pick_type == "Winner pick" and outcome == "WIN":
+    if pick_type in {"Winner pick", "V5 Win pick"} and outcome == "WIN":
         return "Winner"
-    if pick_type == "Best EW pick" and outcome == "WIN":
+    if pick_type in {"Best EW pick", "V5 Place pick"} and outcome == "WIN":
         return "EW win"
-    if pick_type == "Best EW pick":
+    if pick_type in {"Best EW pick", "V5 Place pick"}:
         return "EW placed"
     return outcome.title()
 
