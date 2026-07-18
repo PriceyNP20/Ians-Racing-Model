@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 
+from ian_racing_model.analysis_engines import engine_signal_map
 from ian_racing_model.domain import RunnerScore
 from racing_intelligence.domain import IntelligenceRunner, ProbabilityAssessment
 
@@ -18,8 +19,9 @@ def analyse_scores(scores: list[RunnerScore]) -> list[IntelligenceRunner]:
     rows: list[IntelligenceRunner] = []
     for race_scores in by_race.values():
         for score in race_scores:
-            win = _win_assessment(score, race_scores)
-            place = _place_assessment(score, race_scores)
+            signals = engine_signal_map(score)
+            win = _win_assessment(score, race_scores, signals)
+            place = _place_assessment(score, race_scores, signals)
             win_edge = _edge(win.probability, _decimal_odds(score.runner.current_odds))
             place_edge = _edge(place.probability, _estimated_place_odds(_decimal_odds(score.runner.current_odds)))
             rows.append(
@@ -44,7 +46,13 @@ def analyse_scores(scores: list[RunnerScore]) -> list[IntelligenceRunner]:
 
 def intelligence_dataframe(scores: list[RunnerScore]) -> pd.DataFrame:
     rows = []
-    for item in analyse_scores(scores):
+    analysed = analyse_scores(scores)
+    score_lookup = {
+        (score.runner.course, score.runner.off_time, score.runner.race_name, score.runner.horse): score
+        for score in scores
+    }
+    for item in analysed:
+        signals = engine_signal_map(score_lookup[(item.course, item.off_time, item.race, item.horse)])
         rows.append(
             {
                 "course": item.course,
@@ -60,9 +68,15 @@ def intelligence_dataframe(scores: list[RunnerScore]) -> pd.DataFrame:
                 "win_value_edge": _format_edge(item.win_value_edge),
                 "place_value_edge": _format_edge(item.place_value_edge),
                 "recommendation": item.recommendation,
+                "pace_shape_score": signals["pace_race_shape"].score,
+                "trainer_intent_score": signals["trainer_intent"].score,
+                "course_conditions_score": signals["course_conditions"].score,
                 "data_quality": item.data_quality,
                 "win_explanation": item.win.explanation,
                 "place_explanation": item.place.explanation,
+                "pace_shape": signals["pace_race_shape"].explanation,
+                "trainer_intent": signals["trainer_intent"].explanation,
+                "course_conditions": signals["course_conditions"].explanation,
                 "warnings": "; ".join(item.warnings[:3]) if item.warnings else "None",
                 "_win_probability": item.win.probability,
                 "_place_probability": item.place.probability,
@@ -80,8 +94,9 @@ def intelligence_dataframe(scores: list[RunnerScore]) -> pd.DataFrame:
     return df.drop(columns=["_win_probability", "_place_probability", "_place_edge", "_win_edge"])
 
 
-def _win_assessment(score: RunnerScore, race_scores: list[RunnerScore]) -> ProbabilityAssessment:
+def _win_assessment(score: RunnerScore, race_scores: list[RunnerScore], signals: dict[str, Any]) -> ProbabilityAssessment:
     probability = score.win_probability or _normalised_probability(score.total_score, race_scores)
+    probability = max(0.001, min(0.85, probability * _engine_probability_factor(signals, mode="win")))
     confidence = min(0.95, max(0.05, score.confidence))
     quality = "ok" if score.win_probability else "partial"
     return ProbabilityAssessment(
@@ -89,25 +104,43 @@ def _win_assessment(score: RunnerScore, race_scores: list[RunnerScore]) -> Proba
         fair_odds=_fair_odds(probability),
         confidence=confidence,
         data_quality=quality,
-        explanation="Separate win probability from calibrated race strength; not reused as place score.",
+        explanation="Separate win probability adjusted by race shape, trainer intent and course/conditions evidence.",
     )
 
 
-def _place_assessment(score: RunnerScore, race_scores: list[RunnerScore]) -> ProbabilityAssessment:
+def _place_assessment(score: RunnerScore, race_scores: list[RunnerScore], signals: dict[str, Any]) -> ProbabilityAssessment:
     field_size = score.runner.field_size or len(race_scores)
     place_slots = _place_slots(field_size)
     base = score.place_probability or min(0.9, (score.win_probability or 0.05) * place_slots * 0.9)
     reliability = _place_reliability(score)
-    probability = max(0.01, min(0.92, base * reliability))
-    confidence = min(0.95, max(0.05, score.confidence * reliability))
+    probability = max(0.01, min(0.92, base * reliability * _engine_probability_factor(signals, mode="place")))
+    confidence = min(0.95, max(0.05, score.confidence * reliability * _engine_confidence_factor(signals)))
     quality = "ok" if score.place_probability else "partial"
     return ProbabilityAssessment(
         probability=probability,
         fair_odds=_fair_odds(probability),
         confidence=confidence,
         data_quality=quality,
-        explanation="Independent place assessment using place slots, reliability, field size and red-flag drag.",
+        explanation="Independent place assessment using place slots, reliability, race shape, intent and conditions.",
     )
+
+
+def _engine_probability_factor(signals: dict[str, Any], mode: str) -> float:
+    weights = {
+        "win": {"pace_race_shape": 0.4, "trainer_intent": 0.35, "course_conditions": 0.25},
+        "place": {"pace_race_shape": 0.35, "trainer_intent": 0.25, "course_conditions": 0.4},
+    }[mode]
+    weighted_edge = 0.0
+    for name, weight in weights.items():
+        signal = signals[name]
+        usable_confidence = max(0.0, min(1.0, signal.confidence))
+        weighted_edge += ((signal.score - 55.0) / 100.0) * weight * usable_confidence
+    return max(0.78, min(1.22, 1.0 + weighted_edge))
+
+
+def _engine_confidence_factor(signals: dict[str, Any]) -> float:
+    confidence = sum(signal.confidence for signal in signals.values()) / max(1, len(signals))
+    return max(0.78, min(1.12, 0.82 + confidence * 0.3))
 
 
 def _place_reliability(score: RunnerScore) -> float:
