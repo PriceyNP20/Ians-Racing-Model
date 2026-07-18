@@ -1,7 +1,45 @@
 flat:
   place_slots_default: 3
   draw_bias_required: true
+  emphasis:
+    ability: normal
+    race_shape: normal
+    improvement_potential: normal
 
 jumps:
   place_slots_default: 3
   jumping_error_penalty: true
+  emphasis:
+    current_wellbeing: high
+    historical_performance: high
+    race_shape: medium
+
+handicap:
+  emphasis:
+    suitability: high
+    market_value: high
+    trainer_intent: high
+
+maiden:
+  emphasis:
+    ability: medium
+    improvement_potential: high
+    historical_performance: low
+
+novice:
+  emphasis:
+    ability: medium
+    improvement_potential: high
+    historical_performance: low
+
+group_or_listed:
+  emphasis:
+    ability: high
+    current_wellbeing: high
+    market_value: medium
+
+staying_handicap:
+  emphasis:
+    suitability: high
+    historical_performance: high
+    race_shape: medium
