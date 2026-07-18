@@ -18,6 +18,14 @@ from racing_intelligence.scoring.v5 import (
     v5_analysis,
     validate_v5_weights,
 )
+from racing_intelligence.scoring.v6 import (
+    V6_PLACE_WEIGHTS,
+    V6_WIN_WEIGHTS,
+    race_difficulty,
+    v6_analysis,
+    v6_dataframe,
+    validate_v6_weights,
+)
 from racing_intelligence.tracking import v5_tracker_dataframe, v5_tracker_summary
 
 
@@ -296,6 +304,75 @@ def test_intelligence_dataframe_exposes_v5_engine_audit_columns() -> None:
         "market_value_engine",
         "historical_performance_engine",
         "v5_explanation",
+    }
+
+    assert expected <= set(df.columns)
+
+
+def test_v6_weight_sets_total_100_and_separate_win_place_logic() -> None:
+    validate_v6_weights()
+
+    assert sum(V6_WIN_WEIGHTS.values()) == 100
+    assert sum(V6_PLACE_WEIGHTS.values()) == 100
+    assert V6_WIN_WEIGHTS != V6_PLACE_WEIGHTS
+    assert V6_PLACE_WEIGHTS["horse_profile"] > V6_WIN_WEIGHTS["horse_profile"]
+    assert V6_WIN_WEIGHTS["trainer_intent"] > V6_PLACE_WEIGHTS["trainer_intent"]
+
+
+def test_v6_builds_fuller_profile_without_inventing_missing_data() -> None:
+    analysis = v6_analysis(
+        _score(
+            runner={
+                "course": "Beverley",
+                "distance": "1m",
+                "going": "Good",
+                "source_payload": {
+                    "rpr": 91,
+                    "ts": 78,
+                    "horse_history": [
+                        {"course": "Beverley", "distance": "1m", "going": "Good", "position": "1"},
+                        {"course": "Beverley", "distance": "1m", "going": "Good", "position": "2"},
+                        {"course": "York", "distance": "7f", "going": "Soft", "position": "6"},
+                    ],
+                },
+            }
+        )
+    )
+
+    assert analysis.place_index != analysis.win_index
+    assert analysis.engines["horse_profile"].score > 60
+    assert analysis.engines["course_suitability"].score > 60
+    assert "Career profile" in analysis.engines["horse_profile"].explanation
+
+
+def test_v6_race_difficulty_detects_unpredictable_maiden() -> None:
+    race_scores = [
+        _score(runner={"horse": f"Runner {idx}", "race_name": "Two-Year-Old Maiden", "field_size": 16}, confidence=0.42)
+        for idx in range(16)
+    ]
+
+    difficulty = race_difficulty(race_scores)
+
+    assert difficulty.grade in {"C", "D"}
+    assert "Unpredictable" in difficulty.explanation or "Competitive" in difficulty.explanation
+
+
+def test_v6_dataframe_exposes_engine_columns() -> None:
+    df = v6_dataframe([_score(runner={"horse": "V6 Audit"})])
+
+    expected = {
+        "v6_win_index",
+        "v6_place_index",
+        "v6_recommendation",
+        "race_difficulty",
+        "horse_profile",
+        "pace_race_shape",
+        "course_suitability",
+        "distance_suitability",
+        "going_suitability",
+        "handicap_position",
+        "trainer_intent",
+        "v6_explanation",
     }
 
     assert expected <= set(df.columns)
