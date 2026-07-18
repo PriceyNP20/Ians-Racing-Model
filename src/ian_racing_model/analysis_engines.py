@@ -75,8 +75,12 @@ def trainer_intent_signal(runner: Runner) -> EngineSignal:
             "trainer_win_percentage",
             "trainer_14_day_win_pct",
             "trainer_30_day_win_pct",
+            "trainer_rtf",
         ),
     )
+    trainer_recent = _trainer_recent_percent(payload)
+    if trainer_sr is None:
+        trainer_sr = trainer_recent
     course_sr = _metric_value(payload, ("trainer_course_win_pct", "trainer_course_strike_rate"))
     target_flag = _truthy(payload, ("target_race", "trainer_target", "intent_flag", "declared_target"))
 
@@ -221,6 +225,18 @@ def _metric_value(payload: dict[str, Any], keys: tuple[str, ...]) -> float | Non
             return float(text)
         except ValueError:
             continue
+    return None
+
+
+def _trainer_recent_percent(payload: dict[str, Any]) -> float | None:
+    value = payload.get("trainer_14_days")
+    if isinstance(value, dict):
+        percent = value.get("percent")
+        if percent not in (None, ""):
+            try:
+                return float(str(percent).strip().replace("%", ""))
+            except ValueError:
+                return None
     return None
 
 
