@@ -23,3 +23,31 @@ class RacingDataProvider(ABC):
     def fetch_horse_history(self, runner: Runner, limit: int = 6) -> dict[str, Any]:
         """Return recent horse results when the provider supports runner history."""
         return {}
+
+    def fetch_horse_profile(self, runner: Runner) -> dict[str, Any]:
+        """Return Pro horse profile fields such as breeding, sex, colour and DOB."""
+        return {}
+
+    def fetch_odds_history(self, runner: Runner) -> dict[str, Any]:
+        """Return runner odds history when the provider supports market movement."""
+        return {}
+
+    def fetch_trainer_course_analysis(self, runner: Runner) -> dict[str, Any]:
+        """Return trainer performance for today's course/setup where supported."""
+        return {}
+
+    def fetch_trainer_distance_analysis(self, runner: Runner) -> dict[str, Any]:
+        """Return trainer performance for today's distance band where supported."""
+        return {}
+
+    def fetch_trainer_jockey_analysis(self, runner: Runner) -> dict[str, Any]:
+        """Return trainer/jockey combination performance where supported."""
+        return {}
+
+    def fetch_jockey_course_analysis(self, runner: Runner) -> dict[str, Any]:
+        """Return jockey performance for today's course/setup where supported."""
+        return {}
+
+    def fetch_jockey_trainer_analysis(self, runner: Runner) -> dict[str, Any]:
+        """Return jockey/trainer combination performance where supported."""
+        return {}
