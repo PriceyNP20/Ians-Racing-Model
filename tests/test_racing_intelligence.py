@@ -111,9 +111,31 @@ def test_v5_tracker_separates_win_and_place_results() -> None:
             _score(
                 runner={
                     "horse": "Placed Runner",
+                    "official_rating": 105,
                     "field_size": 12,
-                    "source_payload": {"result_position": 2},
-                }
+                    "current_odds": "5/1",
+                    "recent_form": "111",
+                    "source_payload": {
+                        "result_position": 2,
+                        "rpr": 110,
+                        "ts": 100,
+                        "timeform_rating": 105,
+                        "pace_rating": 90,
+                        "trainer_ae": 1.4,
+                        "trainer_14_day_win_pct": 25,
+                        "course_place_pct": 70,
+                        "horse_history": [
+                            {"course": "Beverley", "distance": "1m", "going": "Good", "position": "1"},
+                            {"course": "Beverley", "distance": "1m", "going": "Good", "position": "1"},
+                        ],
+                    },
+                },
+                total_score=90,
+                confidence=0.8,
+                win_probability=0.3,
+                place_probability=0.6,
+                win_value_edge=0.1,
+                place_value_edge=0.12,
             )
         ],
         date(2026, 7, 14),
@@ -132,9 +154,29 @@ def test_v6_tracker_separates_win_and_place_results() -> None:
             _score(
                 runner={
                     "horse": "Placed V6 Runner",
+                    "official_rating": 112,
                     "field_size": 12,
-                    "source_payload": {"result_position": 2},
-                }
+                    "current_odds": "5/1",
+                    "recent_form": "111",
+                    "source_payload": {
+                        "result_position": 2,
+                        "rpr": 120,
+                        "ts": 108,
+                        "timeform_rating": 118,
+                        "run_style": "front runner made all",
+                        "trainer_14_day_win_pct": 28,
+                        "horse_history": [
+                            {"course": "Beverley", "distance": "1m", "going": "Good", "position": "1"},
+                            {"course": "Beverley", "distance": "1m", "going": "Good", "position": "2"},
+                        ],
+                    },
+                },
+                total_score=92,
+                confidence=0.8,
+                win_probability=0.32,
+                place_probability=0.62,
+                win_value_edge=0.12,
+                place_value_edge=0.12,
             )
         ],
         date(2026, 7, 14),
@@ -142,9 +184,77 @@ def test_v6_tracker_separates_win_and_place_results() -> None:
 
     summary = v6_tracker_summary(tracker)
 
-    assert set(tracker["pick_type"]) == {"V6 Win pick", "V6 Place pick"}
-    assert summary["v6_win_rate"] == "0.0% (0/1)"
+    assert set(tracker["pick_type"]) == {"V6 Place pick"}
+    assert summary["v6_win_rate"] == "No settled picks"
     assert summary["v6_place_rate"] == "100.0% (1/1)"
+
+
+def test_v5_tracker_skips_races_without_qualifying_candidates() -> None:
+    tracker = v5_tracker_dataframe(
+        [
+            _score(
+                runner={
+                    "horse": "Weak Profile",
+                    "field_size": 12,
+                    "current_odds": "50/1",
+                    "recent_form": "000",
+                    "official_rating": 45,
+                },
+                total_score=38,
+                confidence=0.35,
+                place_probability=0.05,
+                place_value_edge=-0.1,
+            )
+        ],
+        date(2026, 7, 14),
+    )
+
+    assert tracker.empty
+
+
+def test_v6_tracker_allows_only_one_win_and_one_place_pick_per_race() -> None:
+    runners = [
+        _score(
+            runner={
+                "horse": "Place One",
+                "field_size": 12,
+                "current_odds": "8/1",
+                "source_payload": {
+                    "rpr": 96,
+                    "ts": 84,
+                    "horse_history": [
+                        {"course": "Beverley", "distance": "1m", "going": "Good", "position": "1"},
+                        {"course": "Beverley", "distance": "1m", "going": "Good", "position": "2"},
+                    ],
+                },
+            },
+            total_score=76,
+            place_probability=0.5,
+            place_value_edge=0.14,
+        ),
+        _score(
+            runner={
+                "horse": "Place Two",
+                "field_size": 12,
+                "current_odds": "10/1",
+                "source_payload": {
+                    "rpr": 90,
+                    "ts": 80,
+                    "horse_history": [
+                        {"course": "Beverley", "distance": "1m", "going": "Good", "position": "2"},
+                    ],
+                },
+            },
+            total_score=72,
+            place_probability=0.48,
+            place_value_edge=0.12,
+        ),
+    ]
+
+    tracker = v6_tracker_dataframe(runners, date(2026, 7, 14))
+
+    assert tracker["pick_type"].value_counts().max() == 1
+    assert len(tracker) <= 2
 
 
 def test_plugin_registry_replaces_capabilities_by_name() -> None:
