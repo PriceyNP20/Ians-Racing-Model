@@ -17,10 +17,15 @@ def v5_tracker_dataframe(scores: list[RunnerScore], meeting_date: date | None = 
         runners = [score for score in race_scores if not score.runner.is_non_runner]
         if not runners:
             continue
-        win_pick = max(runners, key=lambda score: v5_analysis(score).win_index)
-        place_pick = max(runners, key=lambda score: v5_analysis(score).place_index)
-        rows.append(_v5_pick_row(win_pick, "V5 Win pick", meeting_date))
-        rows.append(_v5_pick_row(place_pick, "V5 Place pick", meeting_date))
+        analysed = [(score, v5_analysis(score, runners)) for score in runners]
+        win_candidates = [item for item in analysed if _is_v5_win_candidate(item[1])]
+        place_candidates = [item for item in analysed if _is_v5_place_candidate(item[0], item[1])]
+        if win_candidates:
+            win_pick = max(win_candidates, key=lambda item: (item[1].win_index, item[1].confidence))[0]
+            rows.append(_v5_pick_row(win_pick, "V5 Win pick", meeting_date))
+        if place_candidates:
+            place_pick = max(place_candidates, key=lambda item: (item[1].place_index, item[1].confidence))[0]
+            rows.append(_v5_pick_row(place_pick, "V5 Place pick", meeting_date))
 
     if not rows:
         return pd.DataFrame()
@@ -53,10 +58,15 @@ def v6_tracker_dataframe(scores: list[RunnerScore], meeting_date: date | None = 
         runners = [score for score in race_scores if not score.runner.is_non_runner]
         if not runners:
             continue
-        win_pick = max(runners, key=lambda score: v6_analysis(score, runners).win_index)
-        place_pick = max(runners, key=lambda score: v6_analysis(score, runners).place_index)
-        rows.append(_v6_pick_row(win_pick, "V6 Win pick", meeting_date, runners))
-        rows.append(_v6_pick_row(place_pick, "V6 Place pick", meeting_date, runners))
+        analysed = [(score, v6_analysis(score, runners)) for score in runners]
+        win_candidates = [item for item in analysed if _is_v6_win_candidate(item[1])]
+        place_candidates = [item for item in analysed if _is_v6_place_candidate(item[0], item[1])]
+        if win_candidates:
+            win_pick = max(win_candidates, key=lambda item: (item[1].win_index, item[1].confidence))[0]
+            rows.append(_v6_pick_row(win_pick, "V6 Win pick", meeting_date, runners))
+        if place_candidates:
+            place_pick = max(place_candidates, key=lambda item: (item[1].place_index, item[1].confidence))[0]
+            rows.append(_v6_pick_row(place_pick, "V6 Place pick", meeting_date, runners))
 
     if not rows:
         return pd.DataFrame()
@@ -163,6 +173,45 @@ def _v6_pick_row(
     }
 
 
+def _is_v5_win_candidate(analysis: Any) -> bool:
+    odds = _decimal_odds(analysis.score.runner.current_odds)
+    return analysis.win_index >= 72 and analysis.confidence >= 0.45 and odds is not None and odds <= 12.0
+
+
+def _is_v5_place_candidate(score: RunnerScore, analysis: Any) -> bool:
+    odds = _decimal_odds(score.runner.current_odds)
+    field_size = score.runner.field_size or 0
+    return (
+        analysis.place_index >= 64
+        and analysis.confidence >= 0.45
+        and field_size >= 8
+        and (odds is None or 4.0 <= odds <= 21.0)
+    )
+
+
+def _is_v6_win_candidate(analysis: Any) -> bool:
+    odds = _decimal_odds(analysis.score.runner.current_odds)
+    return (
+        analysis.win_index >= 74
+        and analysis.confidence >= 0.45
+        and odds is not None
+        and odds <= 14.0
+        and analysis.race_difficulty.grade != "D"
+    )
+
+
+def _is_v6_place_candidate(score: RunnerScore, analysis: Any) -> bool:
+    odds = _decimal_odds(score.runner.current_odds)
+    field_size = score.runner.field_size or 0
+    return (
+        analysis.place_index >= 66
+        and analysis.confidence >= 0.45
+        and field_size >= 8
+        and (odds is None or 3.5 <= odds <= 21.0)
+        and analysis.race_difficulty.grade != "D"
+    )
+
+
 def _race_groups(scores: list[RunnerScore]) -> dict[tuple[str, str, str], list[RunnerScore]]:
     grouped: dict[tuple[str, str, str], list[RunnerScore]] = defaultdict(list)
     for score in scores:
@@ -215,3 +264,22 @@ def _ratio_text(successes: int, total: int) -> str:
     if total == 0:
         return "No settled picks"
     return f"{(successes / total) * 100:.1f}% ({successes}/{total})"
+
+
+def _decimal_odds(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if "/" in text:
+        num, den = text.split("/", 1)
+        try:
+            denominator = float(den)
+            if denominator == 0:
+                return None
+            return float(num) / denominator + 1.0
+        except ValueError:
+            return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
